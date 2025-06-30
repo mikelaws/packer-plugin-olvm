@@ -1,0 +1,11 @@
+main
+packer-plugin-olvm
+test.pkr.hcl
+**/packer_log*.txt
+**/git_*test.pkr.hcl
+crash.log
+
+bin/*
+dist/*
+.docs/*
+docs.zip

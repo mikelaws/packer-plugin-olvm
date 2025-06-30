@@ -1,0 +1,187 @@
+Type: `olvm`
+
+The OLVM builder creates customized templates from source templates in Oracle Linux Virtualization Manager environments. It supports VM creation, provisioning, and optional OVA export functionality.
+
+## Required Configuration
+
+- `olvm_url` (string) - The URL of the OLVM API endpoint
+- `username` (string) - Username for OLVM authentication
+- `password` (string) - Password for OLVM authentication
+- `source_template_name` or `source_template_id` (string) - Template to use as base
+
+## Optional Configuration
+
+### Connection and Authentication
+- `tls_insecure` (bool) - Skip TLS certificate validation. Defaults to `false`.
+
+### Source Configuration
+- `source_type` (string) - Type of source. Defaults to `"template"`.
+- `source_template_name` (string) - Name of the source template
+- `source_template_version` (int) - Version of the source template. Defaults to `1`.
+- `source_template_id` (string) - ID of the source template (alternative to source_template_name)
+
+### VM Configuration
+- `cluster` (string) - Target cluster. Defaults to `"Default"`.
+- `vm_name` (string) - Name for the created VM (auto-generated if not specified)
+- `vm_vcpu_count` (int) - Number of vCPU cores (single socket) and defaults to the source template's CPU configuration if not specified
+- `vm_memory_mb` (int) - Memory size in MB for the VM (defaults to the source template's memory size if not specified)
+
+### Network Configuration
+- `network_name` (string) - Name of the OLVM network to attach to the VM
+- `vnic_profile` (string) - vNIC profile to use for the network interface (defaults to `network_name` if not specified)
+- `dns_servers` (list of strings) - List of DNS server IP addresses to configure on the VM via cloud-init
+- `address` (string) - Static IP address for the VM
+- `netmask` (string) - Network mask. Defaults to `"255.255.255.0"`.
+- `gateway` (string) - Gateway address
+
+### Template Creation
+- `destination_template_name` (string) - Name for the template created from the VM. Defaults to `"packer-<source_template_name>-<epoch_timestamp>"`.
+- `destination_template_description` (string) - Description for the template. Defaults to `"Template created by Packer from VM <vm_name>"`.
+
+### OVA Export Configuration
+- `export_host` (string) - Host to which the template will be exported as an OVA file. If set, export will be performed.
+- `export_directory` (string) - Directory on `export_host` for the OVA file. Defaults to `/tmp` if not set, but only with `export_host`.
+- `export_file_name` (string) - Name of the OVA file. Defaults to `<destination_template_name>.ova` if not set, but only with `export_host`.
+
+> **Note:** If either `export_directory` or `export_file_name` are set, `export_host` must also be set. If `export_host` is not set, no export will be performed.
+
+### Cleanup Configuration
+- `cleanup_vm` (bool) - Enable VM cleanup after template creation. Defaults to `true`. When disabled, the VM will not be deleted.
+- `cleanup_interfaces` (bool) - Remove all network interfaces from the VM before template creation. Defaults to `true`.
+
+### SSH Configuration
+
+The builder supports standard Packer SSH configuration options:
+
+- `ssh_username` (string) - SSH username
+- `ssh_password` (string) - SSH password
+- `ssh_private_key_file` (string) - Path to SSH private key
+- `ssh_timeout` (string) - SSH connection timeout. Defaults to `"5m"`.
+- `ssh_handshake_attempts` (int) - Number of SSH handshake attempts. Defaults to `10`.
+- `ssh_port` (int) - SSH port. Defaults to `22`.
+- `ssh_host` (string) - SSH host (auto-detected from VM)
+- `ssh_clear_authorized_keys` (bool) - Clear authorized keys after provisioning
+- `ssh_pty` (bool) - Enable pseudo-terminal allocation
+- `ssh_agent_auth` (bool) - Use SSH agent authentication
+- `ssh_disable_agent_forwarding` (bool) - Disable SSH agent forwarding
+- `ssh_bastion_host` (string) - SSH bastion host
+- `ssh_bastion_port` (int) - SSH bastion port
+- `ssh_bastion_username` (string) - SSH bastion username
+- `ssh_bastion_password` (string) - SSH bastion password
+- `ssh_bastion_private_key_file` (string) - SSH bastion private key file
+- `ssh_file_transfer_method` (string) - SSH file transfer method
+- `ssh_keep_alive_interval` (string) - SSH keep alive interval
+- `ssh_read_write_timeout` (string) - SSH read/write timeout
+
+## Example Usage
+
+```hcl
+source "olvm" "example" {
+  olvm_url = "https://olvm.example.com/ovirt-engine/api"
+  username = "admin@internal"
+  password = "password"
+  
+  source_template_name    = "centos-8-template"
+  source_template_version = 1
+  
+  vm_name = "packer-example-vm"
+  cluster = "Default"
+  
+  # VM resource configuration (optional - defaults to template values)
+  vm_vcpu_count = 2
+  vm_memory_mb   = 4096
+  
+  address      = "192.168.1.100"
+  netmask      = "255.255.255.0"
+  gateway      = "192.168.1.1"
+  network_name = "ovirtmgmt"
+  vnic_profile = "ovirtmgmt"
+  
+  dns_servers = ["8.8.8.8", "8.8.4.4"]
+  
+  destination_template_name        = "my-custom-template"
+  destination_template_description = "Custom template created by Packer"
+
+  # OVA export example
+  export_host      = "olvm-host01"
+  export_directory = "/tmp"
+  export_file_name = "custom-template.ova"
+  
+  cleanup_vm         = true
+  cleanup_interfaces = true
+  
+  ssh_username = "root"
+  ssh_timeout  = "30m"
+}
+
+build {
+  sources = ["source.olvm.example"]
+  
+  provisioner "shell" {
+    inline = [
+      "echo 'Hello from OLVM!'",
+      "yum update -y"
+    ]
+  }
+}
+```
+
+## Environment Variables
+
+The following environment variables can be used instead of configuration options:
+
+- `OLVM_URL` - OLVM API URL
+- `OLVM_USERNAME` - OLVM username
+- `OLVM_PASSWORD` - OLVM password
+
+## Requirements
+
+- [packer-plugin-sdk](https://github.com/hashicorp/packer-plugin-sdk) >= v0.5.2
+- [Go](https://golang.org/doc/install) >= 1.20
+- OLVM/oVirt environment with API access
+
+## Packer Compatibility
+
+This plugin is compatible with Packer >= v1.10.2
+
+
+```hcl
+ source "olvm" "example" {
+   olvm_url = "https://olvm.example.com/ovirt-engine/api"
+   username = "admin@internal"
+   password = "password"
+   
+   source_template_name    = "centos-8-template"
+   source_template_version = 1
+   
+   vm_name = "packer-example-vm"
+   cluster = "Default"
+   
+   address      = "192.168.1.100"
+   netmask      = "255.255.255.0"
+   gateway      = "192.168.1.1"
+   network_name = "ovirtmgmt"
+   vnic_profile = "ovirtmgmt"
+   
+   dns_servers = ["8.8.8.8", "8.8.4.4"]
+   
+   destination_template_name        = "my-custom-template"
+   destination_template_description = "Custom template created by Packer"
+   
+   ssh_username = "root"
+   ssh_timeout  = "30m"
+ }
+
+ build {
+   sources = ["source.olvm.example"]
+   
+   provisioner "shell" {
+     inline = [
+       "echo 'Hello from OLVM!'",
+       "yum update -y"
+     ]
+   }
+ }
+```
+
+
