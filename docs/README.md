@@ -10,7 +10,7 @@ To install this plugin, copy and paste this code into your Packer configuration,
 packer {
   required_plugins {
     olvm = {
-      source  = "github.com/mikelaws/packer-plugin-olvm"
+      source  = "github.com/mikelaws/olvm"
       version = ">= 1.0.0"
     }
   }
@@ -20,7 +20,7 @@ packer {
 Alternatively, you can use `packer plugins install` to manage installation of this plugin.
 
 ```sh
-$ packer plugins install github.com/mikelaws/packer-plugin-olvm
+$ packer plugins install github.com/mikelaws/olvm
 ```
 
 ## Components

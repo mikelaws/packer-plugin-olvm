@@ -76,6 +76,15 @@ The builder supports standard Packer SSH configuration options:
 ## Example Usage
 
 ```hcl
+packer {
+  required_plugins {
+    olvm = {
+      source  = "github.com/mikelaws/olvm"
+      version = ">= 1.0.0"
+    }
+  }
+}
+
 source "olvm" "example" {
   olvm_url = "https://olvm.example.com/ovirt-engine/api"
   username = "admin@internal"
