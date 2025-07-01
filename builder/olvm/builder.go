@@ -36,7 +36,16 @@ func (b *Builder) Prepare(raws ...interface{}) (generatedVars []string, warnings
 	// Generate default destination template name if not specified
 	if b.config.DestinationTemplateName == "" {
 		epochTimestamp := strconv.FormatInt(time.Now().Unix(), 10)
-		b.config.DestinationTemplateName = fmt.Sprintf("packer-%s-%s", b.config.SourceTemplateName, epochTimestamp)
+		var baseName string
+		switch {
+		case b.config.SourceTemplateName != "":
+			baseName = b.config.SourceTemplateName
+		case b.config.SourceDiskName != "":
+			baseName = b.config.SourceDiskName
+		default:
+			baseName = "olvm"
+		}
+		b.config.DestinationTemplateName = fmt.Sprintf("packer-%s-%s", baseName, epochTimestamp)
 		log.Printf("Generated destination template name: %s", b.config.DestinationTemplateName)
 	}
 
@@ -53,9 +62,10 @@ func (b *Builder) Prepare(raws ...interface{}) (generatedVars []string, warnings
 	}
 
 	// Set default value for cleanup_vm if not specified
-	if !b.config.CleanupVM {
-		b.config.CleanupVM = true
-		log.Printf("Using default cleanup_vm: %t", b.config.CleanupVM)
+	if b.config.CleanupVM == nil {
+		defaultCleanupVM := true
+		b.config.CleanupVM = &defaultCleanupVM
+		log.Printf("Using default cleanup_vm: %t", *b.config.CleanupVM)
 	}
 
 	// Set default export filename if export_host is specified but filename is not
@@ -71,7 +81,7 @@ func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (pack
 	var err error
 
 	conn, err := ovirtsdk4.NewConnectionBuilder().
-		URL(b.config.AccessConfig.OlvmURL.String()).
+		URL(b.config.AccessConfig.olvmParsedURL.String()).
 		Username(b.config.AccessConfig.Username).
 		Password(b.config.AccessConfig.Password).
 		Insecure(b.config.AccessConfig.TLSInsecure).
@@ -83,7 +93,7 @@ func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (pack
 	}
 	defer conn.Close()
 
-	log.Printf("Successfully connected to %s\n", b.config.AccessConfig.OlvmURL.String())
+	log.Printf("Successfully connected to %s\n", b.config.AccessConfig.olvmParsedURL.String())
 
 	state := new(multistep.BasicStateBag)
 	state.Put("config", &b.config)
@@ -97,12 +107,10 @@ func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (pack
 		Comm:         &b.config.Comm,
 		DebugKeyPath: fmt.Sprintf("olvm_%s.pem", b.config.PackerBuildName),
 	})
-	if b.config.SourceType == "template" {
-		steps = append(steps, &stepCreateVMFromTemplate{
-			Ctx:   b.config.ctx,
-			Debug: b.config.PackerDebug,
-		})
-	}
+	steps = append(steps, &stepCreateVM{
+		Ctx:   b.config.ctx,
+		Debug: b.config.PackerDebug,
+	})
 	steps = append(steps, &stepSetupInitialRun{
 		Debug: b.config.PackerDebug,
 		Comm:  &b.config.Comm,

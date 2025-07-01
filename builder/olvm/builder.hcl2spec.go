@@ -18,6 +18,16 @@ type FlatConfig struct {
 	PackerOnError                  *string           `mapstructure:"packer_on_error" cty:"packer_on_error" hcl:"packer_on_error"`
 	PackerUserVars                 map[string]string `mapstructure:"packer_user_variables" cty:"packer_user_variables" hcl:"packer_user_variables"`
 	PackerSensitiveVars            []string          `mapstructure:"packer_sensitive_variables" cty:"packer_sensitive_variables" hcl:"packer_sensitive_variables"`
+	OlvmURLRaw                     *string           `mapstructure:"olvm_url" cty:"olvm_url" hcl:"olvm_url"`
+	TLSInsecure                    *bool             `mapstructure:"tls_insecure" cty:"tls_insecure" hcl:"tls_insecure"`
+	Username                       *string           `mapstructure:"username" cty:"username" hcl:"username"`
+	Password                       *string           `mapstructure:"password" cty:"password" hcl:"password"`
+	Cluster                        *string           `mapstructure:"cluster" cty:"cluster" hcl:"cluster"`
+	SourceTemplateName             *string           `mapstructure:"source_template_name" cty:"source_template_name" hcl:"source_template_name"`
+	SourceTemplateVersion          *int              `mapstructure:"source_template_version" cty:"source_template_version" hcl:"source_template_version"`
+	SourceTemplateID               *string           `mapstructure:"source_template_id" cty:"source_template_id" hcl:"source_template_id"`
+	SourceDiskName                 *string           `mapstructure:"source_disk_name" cty:"source_disk_name" hcl:"source_disk_name"`
+	SourceDiskID                   *string           `mapstructure:"source_disk_id" cty:"source_disk_id" hcl:"source_disk_id"`
 	Type                           *string           `mapstructure:"communicator" cty:"communicator" hcl:"communicator"`
 	PauseBeforeConnect             *string           `mapstructure:"pause_before_connecting" cty:"pause_before_connecting" hcl:"pause_before_connecting"`
 	SSHHost                        *string           `mapstructure:"ssh_host" cty:"ssh_host" hcl:"ssh_host"`
@@ -69,31 +79,22 @@ type FlatConfig struct {
 	WinRMUseNTLM                   *bool             `mapstructure:"winrm_use_ntlm" cty:"winrm_use_ntlm" hcl:"winrm_use_ntlm"`
 	VMName                         *string           `mapstructure:"vm_name" cty:"vm_name" hcl:"vm_name"`
 	VmVcpuCount                    *int              `mapstructure:"vm_vcpu_count" cty:"vm_vcpu_count" hcl:"vm_vcpu_count"`
-	VmMemoryMb                     *int              `mapstructure:"vm_memory_mb" cty:"vm_memory_mb" hcl:"vm_memory_mb"`
+	VmMemoryMB                     *int              `mapstructure:"vm_memory_mb" cty:"vm_memory_mb" hcl:"vm_memory_mb"`
+	VMStorageDriver                *string           `mapstructure:"vm_storage_driver" cty:"vm_storage_driver" hcl:"vm_storage_driver"`
 	IPAddress                      *string           `mapstructure:"address" cty:"address" hcl:"address"`
 	Netmask                        *string           `mapstructure:"netmask" cty:"netmask" hcl:"netmask"`
 	Gateway                        *string           `mapstructure:"gateway" cty:"gateway" hcl:"gateway"`
 	NetworkName                    *string           `mapstructure:"network_name" cty:"network_name" hcl:"network_name"`
 	VnicProfile                    *string           `mapstructure:"vnic_profile" cty:"vnic_profile" hcl:"vnic_profile"`
-	CleanupVM                      *bool             `mapstructure:"cleanup_vm" cty:"cleanup_vm" hcl:"cleanup_vm"`
 	DNSServers                     []string          `mapstructure:"dns_servers" cty:"dns_servers" hcl:"dns_servers"`
+	OSInterfaceName                *string           `mapstructure:"os_interface_name" cty:"os_interface_name" hcl:"os_interface_name"`
 	DestinationTemplateName        *string           `mapstructure:"destination_template_name" cty:"destination_template_name" hcl:"destination_template_name"`
 	DestinationTemplateDescription *string           `mapstructure:"destination_template_description" cty:"destination_template_description" hcl:"destination_template_description"`
 	CleanupInterfaces              *bool             `mapstructure:"cleanup_interfaces" cty:"cleanup_interfaces" hcl:"cleanup_interfaces"`
+	CleanupVM                      *bool             `mapstructure:"cleanup_vm" cty:"cleanup_vm" hcl:"cleanup_vm"`
 	ExportHost                     *string           `mapstructure:"export_host" cty:"export_host" hcl:"export_host"`
 	ExportDirectory                *string           `mapstructure:"export_directory" cty:"export_directory" hcl:"export_directory"`
 	ExportFileName                 *string           `mapstructure:"export_file_name" cty:"export_file_name" hcl:"export_file_name"`
-	// AccessConfig fields
-	OlvmURLRaw  *string `mapstructure:"olvm_url" cty:"olvm_url" hcl:"olvm_url"`
-	TLSInsecure *bool   `mapstructure:"tls_insecure" cty:"tls_insecure" hcl:"tls_insecure"`
-	Username    *string `mapstructure:"username" cty:"username" hcl:"username"`
-	Password    *string `mapstructure:"password" cty:"password" hcl:"password"`
-	// SourceConfig fields
-	Cluster               *string `mapstructure:"cluster" cty:"cluster" hcl:"cluster"`
-	SourceType            *string `mapstructure:"source_type" cty:"source_type" hcl:"source_type"`
-	SourceTemplateName    *string `mapstructure:"source_template_name" cty:"source_template_name" hcl:"source_template_name"`
-	SourceTemplateVersion *int    `mapstructure:"source_template_version" cty:"source_template_version" hcl:"source_template_version"`
-	SourceTemplateID      *string `mapstructure:"source_template_id" cty:"source_template_id" hcl:"source_template_id"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -116,6 +117,16 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"packer_on_error":                  &hcldec.AttrSpec{Name: "packer_on_error", Type: cty.String, Required: false},
 		"packer_user_variables":            &hcldec.AttrSpec{Name: "packer_user_variables", Type: cty.Map(cty.String), Required: false},
 		"packer_sensitive_variables":       &hcldec.AttrSpec{Name: "packer_sensitive_variables", Type: cty.List(cty.String), Required: false},
+		"olvm_url":                         &hcldec.AttrSpec{Name: "olvm_url", Type: cty.String, Required: false},
+		"tls_insecure":                     &hcldec.AttrSpec{Name: "tls_insecure", Type: cty.Bool, Required: false},
+		"username":                         &hcldec.AttrSpec{Name: "username", Type: cty.String, Required: false},
+		"password":                         &hcldec.AttrSpec{Name: "password", Type: cty.String, Required: false},
+		"cluster":                          &hcldec.AttrSpec{Name: "cluster", Type: cty.String, Required: false},
+		"source_template_name":             &hcldec.AttrSpec{Name: "source_template_name", Type: cty.String, Required: false},
+		"source_template_version":          &hcldec.AttrSpec{Name: "source_template_version", Type: cty.Number, Required: false},
+		"source_template_id":               &hcldec.AttrSpec{Name: "source_template_id", Type: cty.String, Required: false},
+		"source_disk_name":                 &hcldec.AttrSpec{Name: "source_disk_name", Type: cty.String, Required: false},
+		"source_disk_id":                   &hcldec.AttrSpec{Name: "source_disk_id", Type: cty.String, Required: false},
 		"communicator":                     &hcldec.AttrSpec{Name: "communicator", Type: cty.String, Required: false},
 		"pause_before_connecting":          &hcldec.AttrSpec{Name: "pause_before_connecting", Type: cty.String, Required: false},
 		"ssh_host":                         &hcldec.AttrSpec{Name: "ssh_host", Type: cty.String, Required: false},
@@ -168,28 +179,21 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"vm_name":                          &hcldec.AttrSpec{Name: "vm_name", Type: cty.String, Required: false},
 		"vm_vcpu_count":                    &hcldec.AttrSpec{Name: "vm_vcpu_count", Type: cty.Number, Required: false},
 		"vm_memory_mb":                     &hcldec.AttrSpec{Name: "vm_memory_mb", Type: cty.Number, Required: false},
+		"vm_storage_driver":                &hcldec.AttrSpec{Name: "vm_storage_driver", Type: cty.String, Required: false},
 		"address":                          &hcldec.AttrSpec{Name: "address", Type: cty.String, Required: false},
 		"netmask":                          &hcldec.AttrSpec{Name: "netmask", Type: cty.String, Required: false},
 		"gateway":                          &hcldec.AttrSpec{Name: "gateway", Type: cty.String, Required: false},
 		"network_name":                     &hcldec.AttrSpec{Name: "network_name", Type: cty.String, Required: false},
 		"vnic_profile":                     &hcldec.AttrSpec{Name: "vnic_profile", Type: cty.String, Required: false},
-		"cleanup_vm":                       &hcldec.AttrSpec{Name: "cleanup_vm", Type: cty.Bool, Required: false},
 		"dns_servers":                      &hcldec.AttrSpec{Name: "dns_servers", Type: cty.List(cty.String), Required: false},
+		"os_interface_name":                &hcldec.AttrSpec{Name: "os_interface_name", Type: cty.String, Required: false},
 		"destination_template_name":        &hcldec.AttrSpec{Name: "destination_template_name", Type: cty.String, Required: false},
 		"destination_template_description": &hcldec.AttrSpec{Name: "destination_template_description", Type: cty.String, Required: false},
 		"cleanup_interfaces":               &hcldec.AttrSpec{Name: "cleanup_interfaces", Type: cty.Bool, Required: false},
+		"cleanup_vm":                       &hcldec.AttrSpec{Name: "cleanup_vm", Type: cty.Bool, Required: false},
 		"export_host":                      &hcldec.AttrSpec{Name: "export_host", Type: cty.String, Required: false},
 		"export_directory":                 &hcldec.AttrSpec{Name: "export_directory", Type: cty.String, Required: false},
 		"export_file_name":                 &hcldec.AttrSpec{Name: "export_file_name", Type: cty.String, Required: false},
-		"olvm_url":                         &hcldec.AttrSpec{Name: "olvm_url", Type: cty.String, Required: false},
-		"tls_insecure":                     &hcldec.AttrSpec{Name: "tls_insecure", Type: cty.Bool, Required: false},
-		"username":                         &hcldec.AttrSpec{Name: "username", Type: cty.String, Required: false},
-		"password":                         &hcldec.AttrSpec{Name: "password", Type: cty.String, Required: false},
-		"cluster":                          &hcldec.AttrSpec{Name: "cluster", Type: cty.String, Required: false},
-		"source_type":                      &hcldec.AttrSpec{Name: "source_type", Type: cty.String, Required: false},
-		"source_template_name":             &hcldec.AttrSpec{Name: "source_template_name", Type: cty.String, Required: false},
-		"source_template_version":          &hcldec.AttrSpec{Name: "source_template_version", Type: cty.Number, Required: false},
-		"source_template_id":               &hcldec.AttrSpec{Name: "source_template_id", Type: cty.String, Required: false},
 	}
 	return s
 }

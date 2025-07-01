@@ -59,7 +59,7 @@ func (s *stepSetupInitialRun) Run(ctx context.Context, state multistep.StateBag)
 
 		// Create NIC configuration with in-guest network interface name
 		ncBuilder := ovirtsdk4.NewNicConfigurationBuilder().
-			Name("eth0").
+			Name(c.OSInterfaceName).
 			BootProtocol(ovirtsdk4.BootProtocol("static")).
 			OnBoot(true)
 

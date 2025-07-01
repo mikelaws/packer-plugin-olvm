@@ -1,137 +1,175 @@
-Type: `olvm`
+# OLVM Builder
 
-The OLVM builder creates customized templates from source templates in Oracle Linux Virtualization Manager environments. It supports VM creation, provisioning, and optional OVA export functionality.
+The OLVM builder creates OLVM templates from either a source template or a source disk image. This may include, for example, official Oracle Linux OVA templates provided by Oracle, or cloud disk images provided by many Linux distributions (Ubuntu, RockyLinux, etc.).
 
-## Required Configuration
+## Features
+
+- Creates a Packer build VM from an OLVM template or disk image
+- Configures SSH access and networking, and supports static IPs
+- Generate and optionally export template artifacts (in OVA format) for distribution
+- Uses cloud-init for network and SSH authorized keys configuration
+- Automatic VM cleanup and template creation
+- Support for both template-based and disk-based source images
+
+## Configuration
+
+The OLVM builder supports the following configuration options:
+
+### Required Configuration
+
+#### OLVM Configuration
 
 - `olvm_url` (string) - The URL of the OLVM API endpoint
 - `username` (string) - Username for OLVM authentication
 - `password` (string) - Password for OLVM authentication
-- `source_template_name` or `source_template_id` (string) - Template to use as base
 
-## Optional Configuration
+#### Source Configuration (any one of the following)
 
-### Connection and Authentication
-- `tls_insecure` (bool) - Skip TLS certificate validation. Defaults to `false`.
-
-### Source Configuration
-- `source_type` (string) - Type of source. Defaults to `"template"`.
 - `source_template_name` (string) - Name of the source template
-- `source_template_version` (int) - Version of the source template. Defaults to `1`.
 - `source_template_id` (string) - ID of the source template (alternative to source_template_name)
+- `source_disk_name` (string) - Name of the source disk image
+- `source_disk_id` (string) - ID of the source disk image (alternative to source_disk_name)
 
-### VM Configuration
-- `cluster` (string) - Target cluster. Defaults to `"Default"`.
-- `vm_name` (string) - Name for the created VM (auto-generated if not specified)
-- `vm_vcpu_count` (int) - Number of vCPU cores (single socket) and defaults to the source template's CPU configuration if not specified
-- `vm_memory_mb` (int) - Memory size in MB for the VM (defaults to the source template's memory size if not specified)
+### Optional Configuration
 
-### Network Configuration
+#### Source Configuration
+
+- `source_template_version` (int) - Version of the source template. Defaults to `1`.
+- `cluster` (string) - OLVM cluster name. Defaults to `"Default"`.
+
+#### VM Configuration
+
+- `vm_name` (string) - Name for the VM. Defaults to `"packer-<time-ordered-uuid>"`.
+- `vm_vcpu_count` (int) - Number of virtual CPUs
+- `vm_memory_mb` (int) - Memory in MB
+- `vm_storage_driver` (string) - Storage interface type. Must be one of: `"virtio-scsi"` (default), `"virtio"`.
+
+#### Network Configuration
+
 - `network_name` (string) - Name of the OLVM network to attach to the VM
 - `vnic_profile` (string) - vNIC profile to use for the network interface (defaults to `network_name` if not specified)
 - `dns_servers` (list of strings) - List of DNS server IP addresses to configure on the VM via cloud-init
+- `os_interface_name` (string) - Operating system network interface name. Defaults to `"eth0"`.
 - `address` (string) - Static IP address for the VM
 - `netmask` (string) - Network mask. Defaults to `"255.255.255.0"`.
 - `gateway` (string) - Gateway address
 
-### Template Creation
-- `destination_template_name` (string) - Name for the template created from the VM. Defaults to `"packer-<source_template_name>-<epoch_timestamp>"`.
+#### Template Creation
+
+- `destination_template_name` (string) - Name for the generated template. Optional.
 - `destination_template_description` (string) - Description for the template. Defaults to `"Template created by Packer from VM <vm_name>"`.
 
-### OVA Export Configuration
-- `export_host` (string) - Host to which the template will be exported as an OVA file. If set, export will be performed.
-- `export_directory` (string) - Directory on `export_host` for the OVA file. Defaults to `/tmp` if not set, but only with `export_host`.
-- `export_file_name` (string) - Name of the OVA file. Defaults to `<destination_template_name>.ova` if not set, but only with `export_host`.
+#### Cleanup Configuration
 
-> **Note:** If either `export_directory` or `export_file_name` are set, `export_host` must also be set. If `export_host` is not set, no export will be performed.
+- `cleanup_vm` (bool) - Whether to delete the VM after template creation. Defaults to `true`.
+- `cleanup_interfaces` (bool) - Whether to remove network interfaces before template creation. Defaults to `true`.
 
-### Cleanup Configuration
-- `cleanup_vm` (bool) - Enable VM cleanup after template creation. Defaults to `true`. When disabled, the VM will not be deleted.
-- `cleanup_interfaces` (bool) - Remove all network interfaces from the VM before template creation. Defaults to `true`.
+#### Export Configuration
 
-### SSH Configuration
+- `export_host` (string) - Host to export the template to
+- `export_directory` (string) - Directory on the export host to save the template. Defaults to `"/tmp"`.
+- `export_file_name` (string) - Filename for the exported OVA file. Defaults to `"<destination_template_name>.ova"`.
 
-The builder supports standard Packer SSH configuration options:
+#### SSH Configuration
 
 - `ssh_username` (string) - SSH username
-- `ssh_password` (string) - SSH password
-- `ssh_private_key_file` (string) - Path to SSH private key
 - `ssh_timeout` (string) - SSH connection timeout. Defaults to `"5m"`.
 - `ssh_handshake_attempts` (int) - Number of SSH handshake attempts. Defaults to `10`.
-- `ssh_port` (int) - SSH port. Defaults to `22`.
-- `ssh_host` (string) - SSH host (auto-detected from VM)
-- `ssh_clear_authorized_keys` (bool) - Clear authorized keys after provisioning
-- `ssh_pty` (bool) - Enable pseudo-terminal allocation
-- `ssh_agent_auth` (bool) - Use SSH agent authentication
-- `ssh_disable_agent_forwarding` (bool) - Disable SSH agent forwarding
-- `ssh_bastion_host` (string) - SSH bastion host
-- `ssh_bastion_port` (int) - SSH bastion port
-- `ssh_bastion_username` (string) - SSH bastion username
-- `ssh_bastion_password` (string) - SSH bastion password
-- `ssh_bastion_private_key_file` (string) - SSH bastion private key file
-- `ssh_file_transfer_method` (string) - SSH file transfer method
-- `ssh_keep_alive_interval` (string) - SSH keep alive interval
-- `ssh_read_write_timeout` (string) - SSH read/write timeout
+
+#### TLS Configuration
+
+- `tls_insecure` (bool) - Skip TLS verification. Defaults to `false`.
 
 ## Example Usage
 
-```hcl
-packer {
-  required_plugins {
-    olvm = {
-      source  = "github.com/mikelaws/olvm"
-      version = ">= 1.0.0"
-    }
-  }
-}
+### Template-based Build
 
-source "olvm" "example" {
+```hcl
+source "olvm" "template-example" {
+  # OLVM Configuration
   olvm_url = "https://olvm.example.com/ovirt-engine/api"
   username = "admin@internal"
   password = "password"
-  
-  source_template_name    = "centos-8-template"
-  source_template_version = 1
-  
-  vm_name = "packer-example-vm"
+  tls_insecure = true
+
+  # Source Configuration
+  source_template_name = "oracle-linux-8-template"
   cluster = "Default"
-  
-  # VM resource configuration (optional - defaults to template values)
-  vm_vcpu_count = 2
-  vm_memory_mb   = 4096
-  
-  address      = "192.168.1.100"
-  netmask      = "255.255.255.0"
-  gateway      = "192.168.1.1"
+
+  # Network Configuration
   network_name = "ovirtmgmt"
   vnic_profile = "ovirtmgmt"
+  dns_servers   = ["8.8.8.8", "8.8.4.4"]
+  os_interface_name = "ens3"  # For systems using predictable network interface names
   
-  dns_servers = ["8.8.8.8", "8.8.4.4"]
+  # VM Configuration
+  vm_name       = "packer-test-vm"
+  vm_vcpu_count = 2
+  vm_memory_mb  = 4096
   
+  # SSH Configuration
+  ssh_username = "root"
+  ssh_timeout  = "30m"
+  
+  # Template Configuration
   destination_template_name        = "my-custom-template"
-  destination_template_description = "Custom template created by Packer"
-
-  # OVA export example
-  export_host      = "olvm-host01"
-  export_directory = "/tmp"
-  export_file_name = "custom-template.ova"
+  destination_template_description = "Template created by Packer"
   
+  # Cleanup Configuration
   cleanup_vm         = true
   cleanup_interfaces = true
   
-  ssh_username = "root"
-  ssh_timeout  = "30m"
+  # Export Configuration (optional)
+  export_host      = "export.example.com"
+  export_directory = "/exports"
+  export_file_name = "my-template.ova"
 }
 
 build {
-  sources = ["source.olvm.example"]
+  sources = ["source.olvm.template-example"]
+}
+```
+
+### Disk-based Build
+
+```hcl
+source "olvm" "disk-example" {
+  # OLVM Configuration
+  olvm_url = "https://olvm.example.com/ovirt-engine/api"
+  username = "admin@internal"
+  password = "password"
+  tls_insecure = true
+
+  # Source Configuration
+  source_disk_name = "ubuntu-22.04-cloud-disk"
+  cluster = "Default"
+
+  # Network Configuration
+  network_name = "ovirtmgmt"
+  vnic_profile = "ovirtmgmt"
+  dns_servers   = ["8.8.8.8", "8.8.4.4"]
+  os_interface_name = "ens3"
   
-  provisioner "shell" {
-    inline = [
-      "echo 'Hello from OLVM!'",
-      "yum update -y"
-    ]
-  }
+  # VM Configuration
+  vm_name       = "packer-ubuntu-vm"
+  vm_vcpu_count = 2
+  vm_memory_mb  = 4096
+  vm_storage_driver = "virtio-scsi"
+  
+  # SSH Configuration
+  ssh_username = "ubuntu"
+  ssh_timeout  = "30m"
+  
+  # Template Configuration
+  destination_template_name = "ubuntu-22.04-template"
+  
+  # Cleanup Configuration
+  cleanup_vm         = true
+  cleanup_interfaces = true
+}
+
+build {
+  sources = ["source.olvm.disk-example"]
 }
 ```
 
@@ -173,6 +211,7 @@ This plugin is compatible with Packer >= v1.10.2
    vnic_profile = "ovirtmgmt"
    
    dns_servers = ["8.8.8.8", "8.8.4.4"]
+   os_interface_name = "ens3"  # For systems using predictable network interface names
    
    destination_template_name        = "my-custom-template"
    destination_template_description = "Custom template created by Packer"

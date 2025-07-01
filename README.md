@@ -1,21 +1,41 @@
 # Packer Plugin for Oracle Linux Virtualization Manager (OLVM)
 
-This repository contains a Packer plugin for building OLVM images. The plugin allows you to create a customized template from a source template in an OLVM environment.
+This repository contains a Packer plugin for building OLVM images. The plugin allows you to create a customized template from either a source template, or a source disk image. This may include, for example, official Oracle Linux OVA templates provided by Oracle, or cloud disk images provided by many Linux distributions (Ubuntu, RockyLinux, etc.)
 
 ## Features
 
-- Creates a Packer build VM from and OLVM template
+- Creates a Packer build VM from an OLVM template or disk image
 - Configures SSH access and networking, and supports static IPs
-- Generate and optionally export template artifacts for deployment
+- Generate and optionally export template artifacts (in OVA format) for distribution
 - Uses cloud-init for network and SSH authorized keys configuration
 - Automatic VM cleanup and template creation
+- Support for both template-based and disk-based source images
 
-## Components
+## Installation
 
-This plugin contains:
-- OLVM Builder ([builder/olvm](builder/olvm)) - Creates and OLVM template from a source template
-- Documentation ([docs](docs))
-- Examples ([example](example))
+### Prerequisites
+
+- Packer 1.7.0 or later
+- Access to an OLVM/oVirt environment
+- Network connectivity to the OLVM API
+
+### Plugin Installation
+
+1. Download the latest release for your platform from the [releases page](https://github.com/mikelaws/packer-plugin-olvm/releases)
+2. Extract the binary to your Packer plugin directory:
+   ```bash
+   mkdir -p ~/.packer.d/plugins
+   cp packer-builder-olvm ~/.packer.d/plugins/
+   chmod +x ~/.packer.d/plugins/packer-builder-olvm
+   ```
+
+### Building from Source
+
+```bash
+git clone https://github.com/mikelaws/packer-plugin-olvm.git
+cd packer-plugin-olvm
+go build -o bin/packer-builder-olvm ./builder/olvm
+```
 
 ## Configuration
 
@@ -23,184 +43,210 @@ The OLVM builder supports the following configuration options:
 
 ### Required Configuration
 
+#### OLVM Configuration
+
 - `olvm_url` - The URL of the OLVM API endpoint
 - `username` - Username for OLVM authentication
 - `password` - Password for OLVM authentication
-- `source_template_name` or `source_template_id` - Template to use as base
+
+#### Source Configuration (any one of the following)
+
+- `source_template_name` - Name of the source template
+- `source_template_id` - ID of the source template (alternative to source_template_name)
+- `source_disk_name` - Name of the source disk image
+- `source_disk_id` - ID of the source disk image (alternative to source_disk_name)
 
 ### Optional Configuration
 
-#### Connection and Authentication
-- `tls_insecure` - Skip TLS certificate validation (defaults to false)
-
 #### Source Configuration
-- `source_type` - Type of source (defaults to "template")
-- `source_template_name` - Name of the source template
+
 - `source_template_version` - Version of the source template (defaults to 1)
-- `source_template_id` - ID of the source template (alternative to source_template_name)
+- `cluster` - OLVM cluster name (defaults to "Default")
 
 #### VM Configuration
-- `cluster` - Target cluster (defaults to "Default")
-- `vm_name` - Name for the created VM (auto-generated if not specified)
-- `vm_vcpu_count` - Number of vCPU cores (single socket) and defaults to the source template's CPU configuration if not specified
-- `vm_memory_mb` - Memory size in MB for the VM (defaults to the source template's memory size if not specified)
+
+- `vm_name` - Name for the VM (defaults to "packer-<time-ordered-uuid>")
+- `vm_vcpu_count` - Number of virtual CPUs
+- `vm_memory_mb` - Memory in MB
+- `vm_storage_driver` - Storage interface type (defaults to "virtio-scsi")
 
 #### Network Configuration
+
 - `network_name` - Name of the OLVM network to attach to the VM
 - `vnic_profile` - vNIC profile to use for the network interface (defaults to `network_name` if not specified)
-- `dns_servers` - List of DNS server IP addresses to configure on the VM via cloud-init
+- `dns_servers` - List of DNS server IP addresses
+- `os_interface_name` - Operating system network interface name (defaults to "eth0")
 - `address` - Static IP address for the VM
 - `netmask` - Network mask (defaults to "255.255.255.0")
 - `gateway` - Gateway address
 
 #### Template Creation
-- `destination_template_name` - Name for the template created from the VM. Defaults to "packer-<source_template_name>-<epoch_timestamp>".
+
+- `destination_template_name` - Name for the generated template (optional)
 - `destination_template_description` - Description for the template. Defaults to "Template created by Packer from VM <vm_name>".
 
-#### OVA Export Configuration
-- `export_host` - Host to which the template will be exported as an OVA file. If set, export will be performed.
-- `export_directory` - Directory on `export_host` for the OVA file. Defaults to `/tmp` if not set, but only with `export_host`.
-- `export_file_name` - Name of the OVA file. Defaults to `<destination_template_name>.ova` if not set, but only with `export_host`.
-
-> **Note:** If either `export_directory` or `export_file_name` are set, `export_host` must also be set. If `export_host` is not set, no export will be performed.
-
 #### Cleanup Configuration
-- `cleanup_vm` - Enable VM cleanup after template creation (defaults to true). When disabled, the VM will not be deleted.
-- `cleanup_interfaces` - Remove all network interfaces from the VM before template creation (defaults to true).
 
-### SSH Configuration
+- `cleanup_vm` - Whether to delete the VM after template creation (defaults to true)
+- `cleanup_interfaces` - Whether to remove network interfaces before template creation (defaults to true)
 
-The builder supports standard Packer SSH configuration options:
+#### Export Configuration
+
+- `export_host` - Host to export the template to
+- `export_directory` - Directory on the export host to save the template (defaults to "/tmp")
+- `export_file_name` - Filename for the exported OVA file (defaults to "<destination_template_name>.ova")
+
+#### SSH Configuration
 
 - `ssh_username` - SSH username
-- `ssh_password` - SSH password
-- `ssh_private_key_file` - Path to SSH private key
 - `ssh_timeout` - SSH connection timeout (defaults to 5m)
 - `ssh_handshake_attempts` - Number of SSH handshake attempts (defaults to 10)
-- `ssh_port` - SSH port (defaults to 22)
-- `ssh_host` - SSH host (auto-detected from VM)
-- `ssh_clear_authorized_keys` - Clear authorized keys after provisioning
-- `ssh_pty` - Enable pseudo-terminal allocation
-- `ssh_agent_auth` - Use SSH agent authentication
-- `ssh_disable_agent_forwarding` - Disable SSH agent forwarding
-- `ssh_bastion_host` - SSH bastion host
-- `ssh_bastion_port` - SSH bastion port
-- `ssh_bastion_username` - SSH bastion username
-- `ssh_bastion_password` - SSH bastion password
-- `ssh_bastion_private_key_file` - SSH bastion private key file
-- `ssh_file_transfer_method` - SSH file transfer method
-- `ssh_keep_alive_interval` - SSH keep alive interval
-- `ssh_read_write_timeout` - SSH read/write timeout
+
+#### TLS Configuration
+
+- `tls_insecure` - Skip TLS verification (defaults to false)
 
 ## Example Usage
 
-```hcl
-packer {
-  required_plugins {
-    olvm = {
-      source  = "github.com/mikelaws/olvm"
-      version = ">= 1.0.0"
-    }
-  }
-}
+### Template-based Build
 
-source "olvm" "example" {
+```hcl
+source "olvm" "template-example" {
+  # OLVM Configuration
   olvm_url = "https://olvm.example.com/ovirt-engine/api"
-  username  = "admin@internal"
-  password  = "password"
-  
-  source_template_name    = "centos-8-template"
-  source_template_version = 1
-  
-  vm_name = "packer-example-vm"
+  username = "admin@internal"
+  password = "password"
+  tls_insecure = true
+
+  # Source Configuration
+  source_template_name = "oracle-linux-8-template"
   cluster = "Default"
-  
-  # VM resource configuration (optional - defaults to template values)
-  vm_vcpu_count = 2
-  vm_memory_mb   = 4096
-  
-  address      = "192.168.1.100"
-  netmask      = "255.255.255.0"
-  gateway      = "192.168.1.1"
+
+  # Network Configuration
   network_name = "ovirtmgmt"
   vnic_profile = "ovirtmgmt"
+  dns_servers   = ["8.8.8.8", "8.8.4.4"]
+  os_interface_name = "ens3"  # For systems using predictable network interface names
   
-  dns_servers = ["8.8.8.8", "8.8.4.4"]
+  # VM Configuration
+  vm_name       = "packer-test-vm"
+  vm_vcpu_count = 2
+  vm_memory_mb  = 4096
   
+  # SSH Configuration
+  ssh_username = "root"
+  ssh_timeout  = "30m"
+  
+  # Template Configuration
   destination_template_name        = "my-custom-template"
-  destination_template_description = "Custom template created by Packer"
-
-  # OVA export example
-  export_host      = "olvm-host01"
-  export_directory = "/tmp"
-  export_file_name = "custom-template.ova"
+  destination_template_description = "Template created by Packer"
   
+  # Cleanup Configuration
   cleanup_vm         = true
   cleanup_interfaces = true
   
-  ssh_username = "root"
-  ssh_timeout  = "30m"
+  # Export Configuration (optional)
+  export_host      = "export.example.com"
+  export_directory = "/exports"
+  export_file_name = "my-template.ova"
 }
 
 build {
-  sources = ["source.olvm.example"]
-  
-  provisioner "shell" {
-    inline = [
-      "echo 'Hello from OLVM!'",
-      "yum update -y"
-    ]
-  }
+  sources = ["source.olvm.template-example"]
 }
 ```
 
-## Build from source
+### Disk-based Build
 
-1. Clone this GitHub repository locally.
+```hcl
+source "olvm" "disk-example" {
+  # OLVM Configuration
+  olvm_url = "https://olvm.example.com/ovirt-engine/api"
+  username = "admin@internal"
+  password = "password"
+  tls_insecure = true
 
-2. Run this command from the root directory: 
-```shell 
-go build -ldflags="-X github.com/mikelaws/packer-plugin-olvm/version.VersionPrerelease=dev" -o packer-plugin-olvm
+  # Source Configuration
+  source_disk_name = "ubuntu-22.04-cloud-disk"
+  cluster = "Default"
+
+  # Network Configuration
+  network_name = "ovirtmgmt"
+  vnic_profile = "ovirtmgmt"
+  dns_servers   = ["8.8.8.8", "8.8.4.4"]
+  os_interface_name = "ens3"
+  
+  # VM Configuration
+  vm_name       = "packer-ubuntu-vm"
+  vm_vcpu_count = 2
+  vm_memory_mb  = 4096
+  vm_storage_driver = "virtio-scsi"
+  
+  # SSH Configuration
+  ssh_username = "ubuntu"
+  ssh_timeout  = "30m"
+  
+  # Template Configuration
+  destination_template_name = "ubuntu-22.04-template"
+  
+  # Cleanup Configuration
+  cleanup_vm         = true
+  cleanup_interfaces = true
+}
+
+build {
+  sources = ["source.olvm.disk-example"]
+}
 ```
 
-3. After you successfully compile, the `packer-plugin-olvm` plugin binary file is in the root directory. 
+## Building
 
-4. To install the compiled plugin, run the following command 
-```shell
-packer plugins install --path packer-plugin-olvm github.com/mikelaws/packer-plugin-olvm
+To build the plugin:
+
+```bash
+make build
 ```
 
-### Build on *nix systems
-Unix like systems with the make, sed, and grep commands installed can use the `make dev` to execute the build from source steps. 
+Or manually:
 
-## Running Acceptance Tests
-
-Make sure to install the plugin locally using the steps in [Build from source](#build-from-source).
-
-Once everything needed is set up, run:
-```
-PACKER_ACC=1 go test -count 1 -v ./... -timeout=120m
+```bash
+go build -o bin/packer-builder-olvm ./builder/olvm
 ```
 
-This will run the acceptance tests for all plugins in this set.
+## Development
 
-## Environment Variables
+### Prerequisites
 
-The following environment variables can be used instead of configuration options:
+- Go 1.19 or later
+- Packer 1.7.0 or later
 
-- `OLVM_URL` - OLVM API URL
-- `OLVM_USERNAME` - OLVM username
-- `OLVM_PASSWORD` - OLVM password
+### Running Tests
 
-## Requirements
+```bash
+go test ./...
+```
 
-- [packer-plugin-sdk](https://github.com/hashicorp/packer-plugin-sdk) >= v0.5.2
-- [Go](https://golang.org/doc/install) >= 1.20
-- OLVM/oVirt environment with API access
+### Code Generation
 
-## Packer Compatibility
-This plugin is compatible with Packer >= v1.10.2
+The HCL2 specification is auto-generated. To regenerate it:
+
+```bash
+go generate ./builder/olvm
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
 
 ## License
 
-This project is licensed under the MPL-2.0 License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues and questions, please use the [GitHub issue tracker](https://github.com/mikelaws/packer-plugin-olvm/issues).

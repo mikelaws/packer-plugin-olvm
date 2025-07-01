@@ -7,7 +7,6 @@ require (
 	github.com/hashicorp/hcl/v2 v2.19.1
 	github.com/hashicorp/packer-plugin-sdk v0.6.2
 	github.com/ovirt/go-ovirt v4.3.4+incompatible
-	github.com/zclconf/go-cty v1.13.3
 	golang.org/x/crypto v0.36.0
 )
 
@@ -81,6 +80,7 @@ require (
 	github.com/ulikunitz/xz v0.5.10 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
+	github.com/zclconf/go-cty v1.13.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
 	golang.org/x/net v0.38.0 // indirect

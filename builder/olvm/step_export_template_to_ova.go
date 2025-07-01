@@ -111,7 +111,7 @@ func (s *stepExportTemplateToOVA) Run(ctx context.Context, state multistep.State
 
 	// Build the API URL
 	apiURL := fmt.Sprintf("%s/templates/%s/export",
-		config.AccessConfig.OlvmURL.String(), templateID.(string))
+		config.AccessConfig.olvmParsedURL.String(), templateID.(string))
 
 	// Create HTTP client with TLS skip if configured
 	client := &http.Client{

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/common"
 	"github.com/hashicorp/packer-plugin-sdk/communicator"
@@ -21,20 +22,21 @@ type Config struct {
 
 	Comm communicator.Config `mapstructure:",squash"`
 
-	Cluster                        string   `mapstructure:"cluster"`
 	VMName                         string   `mapstructure:"vm_name"`
 	VmVcpuCount                    int      `mapstructure:"vm_vcpu_count"`
 	VmMemoryMB                     int      `mapstructure:"vm_memory_mb"`
+	VMStorageDriver                string   `mapstructure:"vm_storage_driver"`
 	IPAddress                      string   `mapstructure:"address"`
 	Netmask                        string   `mapstructure:"netmask"`
 	Gateway                        string   `mapstructure:"gateway"`
 	NetworkName                    string   `mapstructure:"network_name"`
 	VnicProfile                    string   `mapstructure:"vnic_profile"`
 	DNSServers                     []string `mapstructure:"dns_servers"`
+	OSInterfaceName                string   `mapstructure:"os_interface_name"`
 	DestinationTemplateName        string   `mapstructure:"destination_template_name"`
 	DestinationTemplateDescription string   `mapstructure:"destination_template_description"`
 	CleanupInterfaces              bool     `mapstructure:"cleanup_interfaces"`
-	CleanupVM                      bool     `mapstructure:"cleanup_vm"`
+	CleanupVM                      *bool    `mapstructure:"cleanup_vm"`
 	ExportHost                     string   `mapstructure:"export_host"`
 	ExportDirectory                string   `mapstructure:"export_directory"`
 	ExportFileName                 string   `mapstructure:"export_file_name"`
@@ -67,6 +69,25 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		log.Printf("Set default netmask to %s", c.Netmask)
 	}
 
+	// Set default value for vm_storage_driver if not specified
+	if c.VMStorageDriver == "" {
+		c.VMStorageDriver = "virtio-scsi"
+		log.Printf("Using default vm_storage_driver: %s", c.VMStorageDriver)
+	}
+
+	// Validate vm_storage_driver value
+	validStorageDrivers := []string{"virtio-scsi", "virtio"}
+	validDriver := false
+	for _, driver := range validStorageDrivers {
+		if c.VMStorageDriver == driver {
+			validDriver = true
+			break
+		}
+	}
+	if !validDriver {
+		errs = packer.MultiErrorAppend(errs, fmt.Errorf("Invalid vm_storage_driver: %s. Must be one of: %v", c.VMStorageDriver, validStorageDrivers))
+	}
+
 	// Validate export configuration
 	if (c.ExportDirectory != "" || c.ExportFileName != "") && c.ExportHost == "" {
 		errs = packer.MultiErrorAppend(errs, errors.New("export_host must be specified when export_directory or export_file_name are set"))
@@ -78,7 +99,28 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		log.Printf("Using default export_directory: %s", c.ExportDirectory)
 	}
 
+	// Set default value for os_interface_name if not specified
+	if c.OSInterfaceName == "" {
+		c.OSInterfaceName = "eth0"
+		log.Printf("Using default os_interface_name: %s", c.OSInterfaceName)
+	}
+
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)
+
+	// Handle SSH timeout after communicator preparation to prevent override
+	// The communicator's Prepare method may override SSHTimeout with SSHWaitTimeout
+	if c.Comm.SSHTimeout == 0 {
+		c.Comm.SSHTimeout = 5 * time.Minute
+		log.Printf("Set default ssh_timeout: %s", c.Comm.SSHTimeout)
+	} else {
+		log.Printf("Using configured ssh_timeout: %s", c.Comm.SSHTimeout)
+	}
+
+	// Clear SSHWaitTimeout to prevent it from overriding SSHTimeout
+	if c.Comm.SSHWaitTimeout != 0 {
+		log.Printf("Warning: ssh_wait_timeout was set to %s, clearing to prevent override of ssh_timeout", c.Comm.SSHWaitTimeout)
+		c.Comm.SSHWaitTimeout = 0
+	}
 
 	if errs != nil && len(errs.Errors) > 0 {
 		return nil, nil, errs

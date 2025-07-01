@@ -12,11 +12,11 @@ import (
 
 // AccessConfig contains the OLVM API access and authentication configuration
 type AccessConfig struct {
-	OlvmURLRaw  string `mapstructure:"olvm_url"`
-	OlvmURL     *url.URL
-	TLSInsecure bool   `mapstructure:"tls_insecure"`
-	Username    string `mapstructure:"username"`
-	Password    string `mapstructure:"password"`
+	OlvmURLRaw    string `mapstructure:"olvm_url"`
+	olvmParsedURL *url.URL
+	TLSInsecure   bool   `mapstructure:"tls_insecure"`
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"`
 }
 
 // Prepare performs basic validation on the AccessConfig
@@ -45,7 +45,7 @@ func (c *AccessConfig) Prepare(ctx *interpolate.Context) []error {
 	}
 
 	var err error
-	if c.OlvmURL, err = url.Parse(c.OlvmURLRaw); err != nil {
+	if c.olvmParsedURL, err = url.Parse(c.OlvmURLRaw); err != nil {
 		errs = append(errs, fmt.Errorf("Could not parse olvm_url: %s", err))
 	}
 
