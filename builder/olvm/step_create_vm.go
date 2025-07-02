@@ -66,7 +66,7 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 
 	// Attach network if specified
 	if config.NetworkName != "" {
-		if err := s.attachNetwork(conn, config, vmID, clusterID); err != nil {
+		if err := s.manageNetworkInterfaces(conn, config, vmID, clusterID); err != nil {
 			state.Put("error", err)
 			ui.Error(err.Error())
 			return multistep.ActionHalt
@@ -541,7 +541,7 @@ func (s *stepCreateVM) attachDiskToVM(conn *ovirtsdk4.Connection, vmID, diskID, 
 	return nil
 }
 
-func (s *stepCreateVM) attachNetwork(conn *ovirtsdk4.Connection, config *Config, vmID, clusterID string) error {
+func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, config *Config, vmID, clusterID string) error {
 	// Find the network
 	var network *ovirtsdk4.Network
 	networksService := conn.SystemService().NetworksService()
@@ -625,6 +625,63 @@ func (s *stepCreateVM) attachNetwork(conn *ovirtsdk4.Connection, config *Config,
 
 	log.Printf("Found vNIC profile: %s (ID: %s)", vnicProfile.MustName(), vnicProfile.MustId())
 
+	// Check for existing network interfaces
+	vmService := conn.SystemService().VmsService().VmService(vmID)
+	nicsService := vmService.NicsService()
+	nicsResp, err := nicsService.List().Send()
+	if err != nil {
+		return fmt.Errorf("Error getting VM network interfaces: %s", err)
+	}
+
+	existingNics, ok := nicsResp.Nics()
+	if !ok {
+		existingNics = nil
+	}
+
+	// For template-based VMs, check if there are existing network interfaces
+	if config.SourceConfig.GetSourceType() == "template" && existingNics != nil && len(existingNics.Slice()) > 0 {
+		log.Printf("Template has %d existing network interfaces", len(existingNics.Slice()))
+
+		// Use the first existing network interface and configure it
+		firstNic := existingNics.Slice()[0]
+		nicID := firstNic.MustId()
+		nicName := firstNic.MustName()
+
+		log.Printf("Configuring existing network interface: %s (ID: %s)", nicName, nicID)
+
+		// Update the existing NIC with our network configuration
+		nicUpdateBuilder := ovirtsdk4.NewNicBuilder().
+			Name(nicName).
+			Network(
+				ovirtsdk4.NewNetworkBuilder().
+					Id(network.MustId()).
+					MustBuild(),
+			).
+			VnicProfile(
+				ovirtsdk4.NewVnicProfileBuilder().
+					Id(vnicProfile.MustId()).
+					MustBuild(),
+			).
+			OnBoot(true).
+			Linked(true)
+
+		nicUpdate, err := nicUpdateBuilder.Build()
+		if err != nil {
+			return fmt.Errorf("Error creating NIC update: %s", err)
+		}
+
+		_, err = nicsService.NicService(nicID).Update().Nic(nicUpdate).Send()
+		if err != nil {
+			return fmt.Errorf("Error updating existing NIC: %s", err)
+		}
+
+		log.Printf("Successfully configured existing network interface '%s' with network: %s", nicName, config.NetworkName)
+		return nil
+	}
+
+	// For disk-based VMs or template-based VMs without existing interfaces, create a new NIC
+	log.Printf("Creating new network interface for VM")
+
 	// Create NIC
 	nicBuilder := ovirtsdk4.NewNicBuilder().
 		Name("nic1").
@@ -646,18 +703,12 @@ func (s *stepCreateVM) attachNetwork(conn *ovirtsdk4.Connection, config *Config,
 		return fmt.Errorf("Error creating NIC: %s", err)
 	}
 
-	_, err = conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		NicsService().
-		Add().
-		Nic(nic).
-		Send()
+	_, err = nicsService.Add().Nic(nic).Send()
 	if err != nil {
 		return fmt.Errorf("Error adding NIC to VM: %s", err)
 	}
 
-	log.Printf("Successfully attached VM to network: %s", config.NetworkName)
+	log.Printf("Successfully created and attached new network interface to network: %s", config.NetworkName)
 	return nil
 }
 

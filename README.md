@@ -80,6 +80,8 @@ The OLVM builder supports the following configuration options:
 - `netmask` - Network mask (defaults to "255.255.255.0")
 - `gateway` - Gateway address
 
+> **Note:** For template-based builds, if the source template already has network interfaces configured, the plugin will configure the first existing interface with the specified `network_name` and `vnic_profile`. If no network interfaces exist, a new one will be created. For disk-based builds, a new network interface is always created.
+
 #### Template Creation
 
 - `destination_template_name` - Name for the generated template (optional)
