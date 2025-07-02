@@ -4,6 +4,8 @@ test.pkr.hcl
 **/packer_log*.txt
 **/git_*test.pkr.hcl
 crash.log
+todo*
+TODO*
 
 bin/*
 dist/*

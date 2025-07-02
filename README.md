@@ -66,8 +66,8 @@ The OLVM builder supports the following configuration options:
 #### VM Configuration
 
 - `vm_name` - Name for the VM (defaults to "packer-<time-ordered-uuid>")
-- `vm_vcpu_count` - Number of virtual CPUs
-- `vm_memory_mb` - Memory in MB
+- `vm_vcpu_count` - Number of virtual CPUs (defaults to 1)
+- `vm_memory_mb` - Memory in MB (defaults to 1024)
 - `vm_storage_driver` - Storage interface type (defaults to "virtio-scsi")
 
 #### Network Configuration
@@ -130,6 +130,7 @@ source "olvm" "template-example" {
   
   # VM Configuration
   vm_name       = "packer-test-vm"
+  # vm_vcpu_count and vm_memory_mb are optional (default to 1 CPU, 1024MB)
   vm_vcpu_count = 2
   vm_memory_mb  = 4096
   
@@ -178,6 +179,7 @@ source "olvm" "disk-example" {
   
   # VM Configuration
   vm_name       = "packer-ubuntu-vm"
+  # vm_vcpu_count and vm_memory_mb are optional (default to 1 CPU, 1024MB)
   vm_vcpu_count = 2
   vm_memory_mb  = 4096
   vm_storage_driver = "virtio-scsi"

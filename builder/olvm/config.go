@@ -105,6 +105,16 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		log.Printf("Using default os_interface_name: %s", c.OSInterfaceName)
 	}
 
+	// Set default values for VM resources if not specified
+	if c.VmVcpuCount == 0 {
+		c.VmVcpuCount = 1
+		log.Printf("Using default vm_vcpu_count: %d", c.VmVcpuCount)
+	}
+	if c.VmMemoryMB == 0 {
+		c.VmMemoryMB = 1024
+		log.Printf("Using default vm_memory_mb: %d", c.VmMemoryMB)
+	}
+
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)
 
 	// Handle SSH timeout after communicator preparation to prevent override
