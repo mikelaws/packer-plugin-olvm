@@ -115,6 +115,12 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		log.Printf("Using default vm_memory_mb: %d", c.VmMemoryMB)
 	}
 
+	// Set default value for network_name if not specified
+	if c.NetworkName == "" {
+		c.NetworkName = "ovirtmgmt"
+		log.Printf("Using default network_name: %s", c.NetworkName)
+	}
+
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)
 
 	// Handle SSH timeout after communicator preparation to prevent override

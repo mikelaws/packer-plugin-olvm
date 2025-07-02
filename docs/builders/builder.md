@@ -17,7 +17,7 @@ source "olvm" "template-example" {
   cluster = "Default"
 
   # Network Configuration
-  network_name = "ovirtmgmt"
+  network_name = "ovirtmgmt"  # Optional (defaults to "ovirtmgmt")
   vnic_profile = "ovirtmgmt"
   dns_servers = ["8.8.8.8", "8.8.4.4"]
   os_interface_name = "ens3"  # For systems using predictable network interface names
@@ -61,7 +61,7 @@ source "olvm" "disk-example" {
   cluster = "Default"
 
   # Network Configuration
-  network_name = "ovirtmgmt"
+  network_name = "ovirtmgmt"  # Optional (defaults to "ovirtmgmt")
   vnic_profile = "ovirtmgmt"
   dns_servers = ["8.8.8.8", "8.8.4.4"]
   os_interface_name = "ens3"
@@ -125,7 +125,7 @@ The OLVM builder supports the following parameters:
 
 #### Network Configuration
 
-- `network_name` - Name of the OLVM network to attach to the VM
+- `network_name` - Name of the OLVM network to attach to the VM (defaults to "ovirtmgmt")
 - `vnic_profile` - vNIC profile to use for the network interface (defaults to `network_name` if not specified)
 - `dns_servers` - List of DNS server IP addresses
 - `os_interface_name` - Operating system network interface name (defaults to "eth0")
