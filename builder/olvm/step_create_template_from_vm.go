@@ -16,7 +16,7 @@ type stepCreateTemplateFromVM struct {
 func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	config := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 
 	vmID := state.Get("vm_id").(string)
 	if vmID == "" {
@@ -26,11 +26,18 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 
 	// Check if the VM is stopped before creating template
 	ui.Say(fmt.Sprintf("Checking VM status before creating template..."))
-	vmResp, err := conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		Get().
-		Send()
+
+	var vmResp *ovirtsdk4.VmServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vmResp, err = conn.SystemService().
+			VmsService().
+			VmService(vmID).
+			Get().
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error getting VM status: %s", err)
 		ui.Error(err.Error())
@@ -52,7 +59,17 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 	ui.Say(fmt.Sprintf("Creating template '%s' from VM...", config.DestinationTemplateName))
 
 	// Get the Templates service
-	templatesService := conn.SystemService().TemplatesService()
+	var templatesService *ovirtsdk4.TemplatesService
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		templatesService = conn.SystemService().TemplatesService()
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("Error getting templates service: %s", err)
+		ui.Error(err.Error())
+		state.Put("error", err)
+		return multistep.ActionHalt
+	}
 
 	// Create template from VM
 	templateBuilder := ovirtsdk4.NewTemplateBuilder().
@@ -84,9 +101,15 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 	}
 
 	// Create the template from the VM
-	templateResp, err := templatesService.Add().
-		Template(template).
-		Send()
+	var templateResp *ovirtsdk4.TemplatesServiceAddResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		templateResp, err = templatesService.Add().
+			Template(template).
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error creating template from VM: %s", err)
 		ui.Error(err.Error())
@@ -111,7 +134,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 	templateStateChange := StateChangeConf{
 		Pending:   []string{"locked", "image_locked"},
 		Target:    []string{"ok"},
-		Refresh:   TemplateStateRefreshFunc(conn, templateID),
+		Refresh:   TemplateStateRefreshFuncWithWrapper(connWrapper, templateID),
 		StepState: state,
 	}
 	if _, err := WaitForState(&templateStateChange); err != nil {

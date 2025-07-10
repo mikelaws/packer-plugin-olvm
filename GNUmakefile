@@ -9,10 +9,10 @@ PLUGIN_FQN=$(shell grep -E '^module' <go.mod | sed -E 's/module \s*//')
 .PHONY: dev
 
 build:
-	@go build -o ${BINARY}
+	@go build -o bin/${BINARY}
 
 dev:
-	go build -ldflags="-X '${PLUGIN_FQN}/version.VersionPrerelease=-dev'" -o ${BINARY}
+	go build -ldflags="-X '${PLUGIN_FQN}/version.VersionPrerelease=-dev'" -o bin/${BINARY}
 	packer plugins install --path ${BINARY} "$(shell echo "${PLUGIN_FQN}" | sed 's/packer-plugin-//')"
 
 test:

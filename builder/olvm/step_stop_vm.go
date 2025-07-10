@@ -13,16 +13,23 @@ type stepStopVM struct{}
 
 func (s *stepStopVM) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 	vmID := state.Get("vm_id").(string)
 
 	// First check if the VM is already stopped
 	ui.Say(fmt.Sprintf("Checking VM status: %s...", vmID))
-	vmResp, err := conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		Get().
-		Send()
+
+	var vmResp *ovirtsdk4.VmServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vmResp, err = conn.SystemService().
+			VmsService().
+			VmService(vmID).
+			Get().
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error getting VM status: %s", err)
 		state.Put("error", err)
@@ -41,11 +48,16 @@ func (s *stepStopVM) Run(ctx context.Context, state multistep.StateBag) multiste
 
 	// Only stop the VM if it's not already down
 	ui.Say(fmt.Sprintf("Stopping VM: %s...", vmID))
-	_, err = conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		Stop().
-		Send()
+
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := conn.SystemService().
+			VmsService().
+			VmService(vmID).
+			Stop().
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error stopping VM: %s", err)
 		state.Put("error", err)
@@ -57,7 +69,7 @@ func (s *stepStopVM) Run(ctx context.Context, state multistep.StateBag) multiste
 	stateChange := StateChangeConf{
 		Pending:   []string{string(ovirtsdk4.VMSTATUS_UP)},
 		Target:    []string{string(ovirtsdk4.VMSTATUS_DOWN)},
-		Refresh:   VMStateRefreshFunc(conn, vmID),
+		Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID),
 		StepState: state,
 	}
 	if _, err := WaitForState(&stateChange); err != nil {
