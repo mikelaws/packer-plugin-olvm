@@ -14,7 +14,6 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/multistep"
 	"github.com/hashicorp/packer-plugin-sdk/multistep/commonsteps"
 	"github.com/hashicorp/packer-plugin-sdk/packer"
-	ovirtsdk4 "github.com/ovirt/go-ovirt"
 )
 
 const BuilderID = "olvm"
@@ -80,24 +79,25 @@ func (b *Builder) Prepare(raws ...interface{}) (generatedVars []string, warnings
 func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (packer.Artifact, error) {
 	var err error
 
-	conn, err := ovirtsdk4.NewConnectionBuilder().
-		URL(b.config.AccessConfig.olvmParsedURL.String()).
-		Username(b.config.AccessConfig.Username).
-		Password(b.config.AccessConfig.Password).
-		Insecure(b.config.AccessConfig.TLSInsecure).
-		Compress(true).
-		Timeout(time.Second * 10).
-		Build()
+	// Create connection wrapper instead of direct connection
+	connWrapper, err := NewConnectionWrapper(&b.config, ui)
 	if err != nil {
-		return nil, fmt.Errorf("OLVM: Connection failed, reason: %s", err.Error())
+		return nil, err
 	}
-	defer conn.Close()
+	defer connWrapper.Close()
+
+	// Get the initial connection to verify it works
+	conn, err := connWrapper.GetConnection()
+	if err != nil {
+		return nil, err
+	}
 
 	log.Printf("Successfully connected to %s\n", b.config.AccessConfig.olvmParsedURL.String())
 
 	state := new(multistep.BasicStateBag)
 	state.Put("config", &b.config)
 	state.Put("conn", conn)
+	state.Put("connWrapper", connWrapper) // Store the wrapper for steps that need it
 	state.Put("hook", hook)
 	state.Put("ui", ui)
 

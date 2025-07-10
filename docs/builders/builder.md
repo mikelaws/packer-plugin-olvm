@@ -111,6 +111,12 @@ The OLVM builder supports the following parameters:
 
 ### Optional Configuration
 
+#### OLVM Configuration
+
+- `tls_insecure` - Skip TLS verification (defaults to false)
+- `max_retries` - Maximum number of reconnection attempts for communication issues (defaults to 4)
+- `retry_interval_sec` - Interval between reconnection attempts in seconds (defaults to 2)
+
 #### Source Configuration
 
 - `source_template_version` - Version of the source template (defaults to 1)

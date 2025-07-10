@@ -52,6 +52,35 @@ func VMStateRefreshFunc(
 	}
 }
 
+// VMStateRefreshFuncWithWrapper returns a StateRefreshFunc that is used to watch
+// a OLVM virtual machine with automatic reconnection support.
+func VMStateRefreshFuncWithWrapper(
+	connWrapper *ConnectionWrapper, vmID string) StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		var resp *ovirtsdk4.VmServiceGetResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			resp, err = conn.SystemService().
+				VmsService().
+				VmService(vmID).
+				Get().
+				Send()
+			return err
+		})
+
+		if err != nil {
+			if _, ok := err.(*ovirtsdk4.NotFoundError); ok {
+				// Sometimes OLVM has consistency issues and doesn't see
+				// newly created VM instance. Return empty state.
+				return nil, "", nil
+			}
+			return nil, "", err
+		}
+
+		return resp.MustVm(), string(resp.MustVm().MustStatus()), nil
+	}
+}
+
 // TemplateStateRefreshFunc returns a StateRefreshFunc that is used to watch
 // a OLVM template.
 func TemplateStateRefreshFunc(
@@ -62,6 +91,35 @@ func TemplateStateRefreshFunc(
 			TemplateService(templateID).
 			Get().
 			Send()
+		if err != nil {
+			if _, ok := err.(*ovirtsdk4.NotFoundError); ok {
+				// Sometimes OLVM has consistency issues and doesn't see
+				// newly created template instance. Return empty state.
+				return nil, "", nil
+			}
+			return nil, "", err
+		}
+
+		return resp.MustTemplate(), string(resp.MustTemplate().MustStatus()), nil
+	}
+}
+
+// TemplateStateRefreshFuncWithWrapper returns a StateRefreshFunc that is used to watch
+// a OLVM template with automatic reconnection support.
+func TemplateStateRefreshFuncWithWrapper(
+	connWrapper *ConnectionWrapper, templateID string) StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		var resp *ovirtsdk4.TemplateServiceGetResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			resp, err = conn.SystemService().
+				TemplatesService().
+				TemplateService(templateID).
+				Get().
+				Send()
+			return err
+		})
+
 		if err != nil {
 			if _, ok := err.(*ovirtsdk4.NotFoundError); ok {
 				// Sometimes OLVM has consistency issues and doesn't see

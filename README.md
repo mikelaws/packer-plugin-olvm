@@ -10,6 +10,7 @@ This plugin for HashiCorp [Packer][packer-link] provides a builder for Oracle [O
 - Ability to troubleshoot build issues by disabling VM cleanup/deletion
 - Configurable networking and OS network interface name
 - Configurable storage interface (`virtio-scsi`, `virtio`)
+- Automatic session reconnection for long-running provisioners with configurable retry limits
 
 ## Installation
 
@@ -29,7 +30,7 @@ The `packer init` command automatically installs any required Packer plugins def
 packer {
   required_plugins {
     olvm = {
-      version = ">= 1.0.3"
+      version = ">= 1.0.4"
       source  = "github.com/mikelaws/olvm"
     }
   }

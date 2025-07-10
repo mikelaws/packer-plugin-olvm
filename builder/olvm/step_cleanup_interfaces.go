@@ -14,7 +14,7 @@ type stepCleanupInterfaces struct{}
 func (s *stepCleanupInterfaces) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	config := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 	vmID := state.Get("vm_id").(string)
 
 	// Skip interface cleanup if cleanup_interfaces is set to false
@@ -26,8 +26,24 @@ func (s *stepCleanupInterfaces) Run(ctx context.Context, state multistep.StateBa
 	ui.Say("Removing network interfaces from VM...")
 
 	// Get the VM's network interfaces
-	vmService := conn.SystemService().VmsService().VmService(vmID)
-	nicsResp, err := vmService.NicsService().List().Send()
+	var vmService *ovirtsdk4.VmService
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		vmService = conn.SystemService().VmsService().VmService(vmID)
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("Error getting VM service: %s", err)
+		ui.Error(err.Error())
+		state.Put("error", err)
+		return multistep.ActionHalt
+	}
+
+	var nicsResp *ovirtsdk4.VmNicsServiceListResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		nicsResp, err = vmService.NicsService().List().Send()
+		return err
+	})
 	if err != nil {
 		err = fmt.Errorf("Error getting VM network interfaces: %s", err)
 		ui.Error(err.Error())
@@ -48,7 +64,11 @@ func (s *stepCleanupInterfaces) Run(ctx context.Context, state multistep.StateBa
 
 		ui.Message(fmt.Sprintf("Removing network interface: %s (ID: %s)", nicName, nicID))
 
-		_, err := vmService.NicsService().NicService(nicID).Remove().Send()
+		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			_, err := vmService.NicsService().NicService(nicID).Remove().Send()
+			return err
+		})
+
 		if err != nil {
 			err = fmt.Errorf("Error removing network interface %s: %s", nicName, err)
 			ui.Error(err.Error())

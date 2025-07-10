@@ -21,14 +21,25 @@ type stepSetupInitialRun struct {
 func (s *stepSetupInitialRun) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	c := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 
 	ui.Say("Setting up initial run...")
 
 	vmID := state.Get("vm_id").(string)
-	vmService := conn.SystemService().
-		VmsService().
-		VmService(vmID)
+
+	var vmService *ovirtsdk4.VmService
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		vmService = conn.SystemService().
+			VmsService().
+			VmService(vmID)
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("Error getting VM service: %s", err)
+		ui.Error(err.Error())
+		state.Put("error", err)
+		return multistep.ActionHalt
+	}
 
 	// Build initialization configuration using proper oVirt fields
 	initializationBuilder := ovirtsdk4.NewInitializationBuilder()
@@ -110,9 +121,14 @@ func (s *stepSetupInitialRun) Run(ctx context.Context, state multistep.StateBag)
 
 	// Update the VM with the initialization configuration
 	ui.Say("Updating VM with cloud-init configuration...")
-	_, err = vmService.Update().
-		Vm(vm).
-		Send()
+
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := vmService.Update().
+			Vm(vm).
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error updating VM with initialization: %s", err)
 		ui.Error(err.Error())
@@ -122,9 +138,13 @@ func (s *stepSetupInitialRun) Run(ctx context.Context, state multistep.StateBag)
 
 	ui.Say("Starting virtual machine...")
 
-	_, err = vmService.Start().
-		UseCloudInit(true).
-		Send()
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := vmService.Start().
+			UseCloudInit(true).
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error starting VM: %s", err)
 		ui.Error(err.Error())
@@ -136,7 +156,7 @@ func (s *stepSetupInitialRun) Run(ctx context.Context, state multistep.StateBag)
 	stateChange := StateChangeConf{
 		Pending:   []string{"wait_for_launch", "powering_up"},
 		Target:    []string{string(ovirtsdk4.VMSTATUS_UP)},
-		Refresh:   VMStateRefreshFunc(conn, vmID),
+		Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID),
 		StepState: state,
 	}
 	_, err = WaitForState(&stateChange)

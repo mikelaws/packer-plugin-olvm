@@ -33,7 +33,7 @@ type HostInfo struct {
 func (s *stepExportTemplateToOVA) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	config := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 
 	// Skip if export_host is not set
 	if config.ExportHost == "" {
@@ -49,11 +49,28 @@ func (s *stepExportTemplateToOVA) Run(ctx context.Context, state multistep.State
 	ui.Say(fmt.Sprintf("Exporting template to OVA format on host %s...", config.ExportHost))
 
 	// Get the Templates service
-	templatesService := conn.SystemService().TemplatesService()
+	var templatesService *ovirtsdk4.TemplatesService
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		templatesService = conn.SystemService().TemplatesService()
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("Error getting templates service: %s", err)
+		ui.Error(err.Error())
+		state.Put("error", err)
+		return multistep.ActionHalt
+	}
 
 	// Verify the template exists and is accessible
 	ui.Message(fmt.Sprintf("Verifying template %s exists and is accessible...", templateID.(string)))
-	templateResp, err := templatesService.TemplateService(templateID.(string)).Get().Send()
+
+	var templateResp *ovirtsdk4.TemplateServiceGetResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		templateResp, err = templatesService.TemplateService(templateID.(string)).Get().Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error accessing template %s: %s", templateID.(string), err)
 		ui.Error(err.Error())
@@ -67,8 +84,26 @@ func (s *stepExportTemplateToOVA) Run(ctx context.Context, state multistep.State
 
 	// Verify the host exists before attempting export
 	ui.Message(fmt.Sprintf("Verifying host %s exists...", config.ExportHost))
-	hostsService := conn.SystemService().HostsService()
-	hostsResp, err := hostsService.List().Search(fmt.Sprintf("name=%s", config.ExportHost)).Send()
+
+	var hostsService *ovirtsdk4.HostsService
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		hostsService = conn.SystemService().HostsService()
+		return nil
+	})
+	if err != nil {
+		err = fmt.Errorf("Error getting hosts service: %s", err)
+		ui.Error(err.Error())
+		state.Put("error", err)
+		return multistep.ActionHalt
+	}
+
+	var hostsResp *ovirtsdk4.HostsServiceListResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		hostsResp, err = hostsService.List().Search(fmt.Sprintf("name=%s", config.ExportHost)).Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error searching for host %s: %s", config.ExportHost, err)
 		ui.Error(err.Error())
@@ -172,7 +207,7 @@ func (s *stepExportTemplateToOVA) Run(ctx context.Context, state multistep.State
 	templateStateChange := StateChangeConf{
 		Pending:   []string{"locked", "image_locked"},
 		Target:    []string{"ok"},
-		Refresh:   TemplateStateRefreshFunc(conn, templateID.(string)),
+		Refresh:   TemplateStateRefreshFuncWithWrapper(connWrapper, templateID.(string)),
 		StepState: state,
 	}
 	if _, err := WaitForState(&templateStateChange); err != nil {

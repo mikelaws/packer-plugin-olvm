@@ -40,6 +40,8 @@ type Config struct {
 	ExportHost                     string   `mapstructure:"export_host"`
 	ExportDirectory                string   `mapstructure:"export_directory"`
 	ExportFileName                 string   `mapstructure:"export_file_name"`
+	MaxRetries                     int      `mapstructure:"max_retries"`
+	RetryIntervalSec               int      `mapstructure:"retry_interval_sec"`
 
 	ctx interpolate.Context
 }
@@ -119,6 +121,16 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 	if c.NetworkName == "" {
 		c.NetworkName = "ovirtmgmt"
 		log.Printf("Using default network_name: %s", c.NetworkName)
+	}
+
+	// Set default values for retry configuration
+	if c.MaxRetries == 0 {
+		c.MaxRetries = 4
+		log.Printf("Using default max_retries: %d", c.MaxRetries)
+	}
+	if c.RetryIntervalSec == 0 {
+		c.RetryIntervalSec = 2
+		log.Printf("Using default retry_interval_sec: %d", c.RetryIntervalSec)
 	}
 
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)

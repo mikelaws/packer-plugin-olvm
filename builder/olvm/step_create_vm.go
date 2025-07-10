@@ -29,13 +29,13 @@ type VMResourceInfo struct {
 func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multistep.StepAction {
 	config := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 
 	sourceType := config.SourceConfig.GetSourceType()
 	ui.Say(fmt.Sprintf("Creating virtual machine from %s...", sourceType))
 
 	// Get cluster ID
-	clusterID, err := s.getClusterID(conn, config.Cluster)
+	clusterID, err := s.getClusterID(connWrapper, config.Cluster)
 	if err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
@@ -43,7 +43,7 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	// Get source resource info (template or disk)
-	resourceInfo, err := s.getSourceResourceInfo(conn, config)
+	resourceInfo, err := s.getSourceResourceInfo(connWrapper, config)
 	if err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
@@ -57,7 +57,7 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	log.Printf("VM memory: %d MB", memoryMB)
 
 	// Create VM
-	vmID, err := s.createVM(conn, config, clusterID, cpuCount, memoryMB, resourceInfo)
+	vmID, err := s.createVM(connWrapper, config, clusterID, cpuCount, memoryMB, resourceInfo)
 	if err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
@@ -66,7 +66,7 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 
 	// Attach network if specified
 	if config.NetworkName != "" {
-		if err := s.manageNetworkInterfaces(conn, config, vmID, clusterID); err != nil {
+		if err := s.manageNetworkInterfaces(connWrapper, config, vmID, clusterID); err != nil {
 			state.Put("error", err)
 			ui.Error(err.Error())
 			return multistep.ActionHalt
@@ -74,18 +74,24 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	// Wait for VM to be ready
-	if err := s.waitForVMReady(conn, vmID, state); err != nil {
+	if err := s.waitForVMReady(connWrapper, vmID, state); err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
 		return multistep.ActionHalt
 	}
 
 	// Get the latest VM info
-	vmResp, err := conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		Get().
-		Send()
+	var vmResp *ovirtsdk4.VmServiceGetResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vmResp, err = conn.SystemService().
+			VmsService().
+			VmService(vmID).
+			Get().
+			Send()
+		return err
+	})
+
 	if err != nil {
 		err = fmt.Errorf("Error getting VM info: %s", err)
 		ui.Error(err.Error())
@@ -99,11 +105,16 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	return multistep.ActionContinue
 }
 
-func (s *stepCreateVM) getClusterID(conn *ovirtsdk4.Connection, clusterName string) (string, error) {
-	cResp, err := conn.SystemService().
-		ClustersService().
-		List().
-		Send()
+func (s *stepCreateVM) getClusterID(connWrapper *ConnectionWrapper, clusterName string) (string, error) {
+	var cResp *ovirtsdk4.ClustersServiceListResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		cResp, err = conn.SystemService().
+			ClustersService().
+			List().
+			Send()
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("Error getting cluster list: %s", err)
 	}
@@ -123,27 +134,30 @@ func (s *stepCreateVM) getClusterID(conn *ovirtsdk4.Connection, clusterName stri
 	return "", fmt.Errorf("Could not find cluster '%s'", clusterName)
 }
 
-func (s *stepCreateVM) getSourceResourceInfo(conn *ovirtsdk4.Connection, config *Config) (*VMResourceInfo, error) {
+func (s *stepCreateVM) getSourceResourceInfo(connWrapper *ConnectionWrapper, config *Config) (*VMResourceInfo, error) {
 	switch config.SourceConfig.GetSourceType() {
 	case "template":
-		return s.getTemplateInfo(conn, config)
+		return s.getTemplateInfo(connWrapper, config)
 	case "disk":
-		return s.getDiskInfo(conn, config)
+		return s.getDiskInfo(connWrapper, config)
 	default:
 		return nil, fmt.Errorf("Unsupported source type: %s", config.SourceConfig.GetSourceType())
 	}
 }
 
-func (s *stepCreateVM) getTemplateInfo(conn *ovirtsdk4.Connection, config *Config) (*VMResourceInfo, error) {
+func (s *stepCreateVM) getTemplateInfo(connWrapper *ConnectionWrapper, config *Config) (*VMResourceInfo, error) {
 	var templateID string
 	if config.SourceTemplateID != "" {
 		templateID = config.SourceTemplateID
 	} else {
-		templatesService := conn.SystemService().TemplatesService()
-		log.Printf("Searching for template '%s'", config.SourceTemplateName)
-		tpsResp, err := templatesService.List().
-			Search(fmt.Sprintf("name=%s", config.SourceTemplateName)).
-			Send()
+		var tpsResp *ovirtsdk4.TemplatesServiceListResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			tpsResp, err = conn.SystemService().TemplatesService().List().
+				Search(fmt.Sprintf("name=%s", config.SourceTemplateName)).
+				Send()
+			return err
+		})
 		if err != nil {
 			return nil, fmt.Errorf("Error searching templates: %s", err)
 		}
@@ -162,11 +176,16 @@ func (s *stepCreateVM) getTemplateInfo(conn *ovirtsdk4.Connection, config *Confi
 	log.Printf("Using template id: %s", templateID)
 
 	// Get template details
-	templateResp, err := conn.SystemService().
-		TemplatesService().
-		TemplateService(templateID).
-		Get().
-		Send()
+	var templateResp *ovirtsdk4.TemplateServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		templateResp, err = conn.SystemService().
+			TemplatesService().
+			TemplateService(templateID).
+			Get().
+			Send()
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("Error getting template details: %s", err)
 	}
@@ -196,13 +215,18 @@ func (s *stepCreateVM) getTemplateInfo(conn *ovirtsdk4.Connection, config *Confi
 	}, nil
 }
 
-func (s *stepCreateVM) getDiskInfo(conn *ovirtsdk4.Connection, config *Config) (*VMResourceInfo, error) {
+func (s *stepCreateVM) getDiskInfo(connWrapper *ConnectionWrapper, config *Config) (*VMResourceInfo, error) {
 	var diskID string
 	var diskFound bool
 	if config.SourceDiskID != "" {
 		diskID = config.SourceDiskID
 		// Check if disk with this ID exists
-		diskResp, err := conn.SystemService().DisksService().DiskService(diskID).Get().Send()
+		var diskResp *ovirtsdk4.DiskServiceGetResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			diskResp, err = conn.SystemService().DisksService().DiskService(diskID).Get().Send()
+			return err
+		})
 		if err != nil {
 			return nil, fmt.Errorf("Could not find disk with ID '%s': %s", diskID, err)
 		}
@@ -210,11 +234,15 @@ func (s *stepCreateVM) getDiskInfo(conn *ovirtsdk4.Connection, config *Config) (
 			diskFound = true
 		}
 	} else {
-		disksService := conn.SystemService().DisksService()
+		var disksResp *ovirtsdk4.DisksServiceListResponse
 		log.Printf("Searching for disk '%s'", config.SourceDiskName)
-		disksResp, err := disksService.List().
-			Search(fmt.Sprintf("alias=%s", config.SourceDiskName)).
-			Send()
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			disksResp, err = conn.SystemService().DisksService().List().
+				Search(fmt.Sprintf("alias=%s", config.SourceDiskName)).
+				Send()
+			return err
+		})
 		if err != nil {
 			return nil, fmt.Errorf("Error searching disks: %s", err)
 		}
@@ -223,9 +251,13 @@ func (s *stepCreateVM) getDiskInfo(conn *ovirtsdk4.Connection, config *Config) (
 		if len(diskSlice.Slice()) == 0 {
 			// Try searching by name if alias search fails
 			log.Printf("No disk found with alias '%s', trying name search", config.SourceDiskName)
-			disksResp, err = disksService.List().
-				Search(fmt.Sprintf("name=%s", config.SourceDiskName)).
-				Send()
+			err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+				var err error
+				disksResp, err = conn.SystemService().DisksService().List().
+					Search(fmt.Sprintf("name=%s", config.SourceDiskName)).
+					Send()
+				return err
+			})
 			if err != nil {
 				return nil, fmt.Errorf("Error searching disks by name: %s", err)
 			}
@@ -246,11 +278,16 @@ func (s *stepCreateVM) getDiskInfo(conn *ovirtsdk4.Connection, config *Config) (
 	}
 
 	// Get disk details
-	diskResp, err := conn.SystemService().
-		DisksService().
-		DiskService(diskID).
-		Get().
-		Send()
+	var diskResp *ovirtsdk4.DiskServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		diskResp, err = conn.SystemService().
+			DisksService().
+			DiskService(diskID).
+			Get().
+			Send()
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("Error getting disk details: %s", err)
 	}
@@ -281,7 +318,7 @@ func (s *stepCreateVM) getVMResources(config *Config, resourceInfo *VMResourceIn
 	return cpuCount, memoryMB
 }
 
-func (s *stepCreateVM) createVM(conn *ovirtsdk4.Connection, config *Config, clusterID string, cpuCount, memoryMB int, resourceInfo *VMResourceInfo) (string, error) {
+func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, clusterID string, cpuCount, memoryMB int, resourceInfo *VMResourceInfo) (string, error) {
 	vmBuilder := ovirtsdk4.NewVmBuilder().
 		Name(config.VMName).
 		Cpu(
@@ -343,11 +380,16 @@ func (s *stepCreateVM) createVM(conn *ovirtsdk4.Connection, config *Config, clus
 		return "", fmt.Errorf("Error creating VM object: %s", err)
 	}
 
-	vmAddResp, err := conn.SystemService().
-		VmsService().
-		Add().
-		Vm(vm).
-		Send()
+	var vmAddResp *ovirtsdk4.VmsServiceAddResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vmAddResp, err = conn.SystemService().
+			VmsService().
+			Add().
+			Vm(vm).
+			Send()
+		return err
+	})
 	if err != nil {
 		if config.SourceConfig.GetSourceType() == "template" {
 			if _, ok := err.(*ovirtsdk4.NotFoundError); ok {
@@ -368,13 +410,13 @@ func (s *stepCreateVM) createVM(conn *ovirtsdk4.Connection, config *Config, clus
 	// Attach disk for disk-based VMs after VM creation
 	if config.SourceConfig.GetSourceType() == "disk" {
 		log.Printf("Cloning disk %s before attaching to VM %s", resourceInfo.ID, vmID)
-		clonedDiskID, err := s.cloneDisk(conn, resourceInfo.ID, resourceInfo.Name)
+		clonedDiskID, err := s.cloneDisk(connWrapper, resourceInfo.ID, resourceInfo.Name)
 		if err != nil {
 			return "", fmt.Errorf("Error cloning disk: %s", err)
 		}
 
 		log.Printf("Attaching cloned disk %s to VM %s", clonedDiskID, vmID)
-		if err := s.attachDiskToVM(conn, vmID, clonedDiskID, config.VMStorageDriver); err != nil {
+		if err := s.attachDiskToVM(connWrapper, vmID, clonedDiskID, config.VMStorageDriver); err != nil {
 			return "", fmt.Errorf("Error attaching cloned disk to VM: %s", err)
 		}
 	}
@@ -382,8 +424,12 @@ func (s *stepCreateVM) createVM(conn *ovirtsdk4.Connection, config *Config, clus
 	// Verify disk attachment for disk-based VMs
 	if config.SourceConfig.GetSourceType() == "disk" {
 		log.Printf("Verifying disk attachment for VM %s", vmID)
-		vmService := conn.SystemService().VmsService().VmService(vmID)
-		vmResp, err := vmService.Get().Send()
+		var vmResp *ovirtsdk4.VmServiceGetResponse
+		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			vmResp, err = conn.SystemService().VmsService().VmService(vmID).Get().Send()
+			return err
+		})
 		if err != nil {
 			log.Printf("Warning: Could not verify disk attachment: %s", err)
 		} else {
@@ -407,7 +453,7 @@ func (s *stepCreateVM) createVM(conn *ovirtsdk4.Connection, config *Config, clus
 	return vmID, nil
 }
 
-func (s *stepCreateVM) cloneDisk(conn *ovirtsdk4.Connection, sourceDiskID, sourceDiskName string) (string, error) {
+func (s *stepCreateVM) cloneDisk(connWrapper *ConnectionWrapper, sourceDiskID, sourceDiskName string) (string, error) {
 	// Generate unique name for cloned disk
 	epochTimestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	clonedDiskName := fmt.Sprintf("%s-%s", sourceDiskName, epochTimestamp)
@@ -415,11 +461,16 @@ func (s *stepCreateVM) cloneDisk(conn *ovirtsdk4.Connection, sourceDiskID, sourc
 	log.Printf("Creating disk clone: %s from source disk: %s", clonedDiskName, sourceDiskID)
 
 	// Get source disk information first
-	sourceDiskResp, err := conn.SystemService().
-		DisksService().
-		DiskService(sourceDiskID).
-		Get().
-		Send()
+	var sourceDiskResp *ovirtsdk4.DiskServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		sourceDiskResp, err = conn.SystemService().
+			DisksService().
+			DiskService(sourceDiskID).
+			Get().
+			Send()
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("Error getting source disk information: %s", err)
 	}
@@ -458,13 +509,16 @@ func (s *stepCreateVM) cloneDisk(conn *ovirtsdk4.Connection, sourceDiskID, sourc
 
 	// Copy the disk using the disk service copy API
 	log.Printf("Copying disk using disk service copy API")
-	_, err = conn.SystemService().
-		DisksService().
-		DiskService(sourceDiskID).
-		Copy().
-		Disk(clonedDisk).
-		StorageDomain(storageDomain).
-		Send()
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := conn.SystemService().
+			DisksService().
+			DiskService(sourceDiskID).
+			Copy().
+			Disk(clonedDisk).
+			StorageDomain(storageDomain).
+			Send()
+		return err
+	})
 	if err != nil {
 		return "", fmt.Errorf("Error copying disk: %s", err)
 	}
@@ -473,7 +527,12 @@ func (s *stepCreateVM) cloneDisk(conn *ovirtsdk4.Connection, sourceDiskID, sourc
 	log.Printf("Waiting for cloned disk %s to become available...", clonedDiskName)
 	var clonedDiskID string
 	for i := 0; i < 30; i++ { // up to ~5 minutes
-		disksResp, err := conn.SystemService().DisksService().List().Search(fmt.Sprintf("name=%s", clonedDiskName)).Send()
+		var disksResp *ovirtsdk4.DisksServiceListResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			disksResp, err = conn.SystemService().DisksService().List().Search(fmt.Sprintf("name=%s", clonedDiskName)).Send()
+			return err
+		})
 		if err != nil {
 			return "", fmt.Errorf("Error listing disks: %s", err)
 		}
@@ -495,7 +554,7 @@ func (s *stepCreateVM) cloneDisk(conn *ovirtsdk4.Connection, sourceDiskID, sourc
 	return clonedDiskID, nil
 }
 
-func (s *stepCreateVM) attachDiskToVM(conn *ovirtsdk4.Connection, vmID, diskID, storageDriver string) error {
+func (s *stepCreateVM) attachDiskToVM(connWrapper *ConnectionWrapper, vmID, diskID, storageDriver string) error {
 	// Create disk object
 	disk, err := ovirtsdk4.NewDiskBuilder().
 		Id(diskID).
@@ -526,13 +585,16 @@ func (s *stepCreateVM) attachDiskToVM(conn *ovirtsdk4.Connection, vmID, diskID, 
 	}
 
 	// Attach disk to VM
-	_, err = conn.SystemService().
-		VmsService().
-		VmService(vmID).
-		DiskAttachmentsService().
-		Add().
-		Attachment(diskAttachment).
-		Send()
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := conn.SystemService().
+			VmsService().
+			VmService(vmID).
+			DiskAttachmentsService().
+			Add().
+			Attachment(diskAttachment).
+			Send()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("Error attaching disk to VM: %s", err)
 	}
@@ -541,11 +603,15 @@ func (s *stepCreateVM) attachDiskToVM(conn *ovirtsdk4.Connection, vmID, diskID, 
 	return nil
 }
 
-func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, config *Config, vmID, clusterID string) error {
+func (s *stepCreateVM) manageNetworkInterfaces(connWrapper *ConnectionWrapper, config *Config, vmID, clusterID string) error {
 	// Find the network
 	var network *ovirtsdk4.Network
-	networksService := conn.SystemService().NetworksService()
-	networksResp, err := networksService.List().Send()
+	var networksResp *ovirtsdk4.NetworksServiceListResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		networksResp, err = conn.SystemService().NetworksService().List().Send()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("Error getting networks: %s", err)
 	}
@@ -566,11 +632,17 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 
 	if network == nil {
 		// Try to find network in the cluster
-		clusterNetworksService := conn.SystemService().
-			ClustersService().
-			ClusterService(clusterID).
-			NetworksService()
-		clusterNetworksResp, err := clusterNetworksService.List().Send()
+		var clusterNetworksResp *ovirtsdk4.ClusterNetworksServiceListResponse
+		err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			var err error
+			clusterNetworksResp, err = conn.SystemService().
+				ClustersService().
+				ClusterService(clusterID).
+				NetworksService().
+				List().
+				Send()
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("Error getting cluster networks: %s", err)
 		}
@@ -601,8 +673,12 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 		vnicProfileName = config.NetworkName
 	}
 
-	vnicProfilesService := conn.SystemService().VnicProfilesService()
-	vnicProfilesResp, err := vnicProfilesService.List().Send()
+	var vnicProfilesResp *ovirtsdk4.VnicProfilesServiceListResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vnicProfilesResp, err = conn.SystemService().VnicProfilesService().List().Send()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("Error getting vNIC profiles: %s", err)
 	}
@@ -626,9 +702,12 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 	log.Printf("Found vNIC profile: %s (ID: %s)", vnicProfile.MustName(), vnicProfile.MustId())
 
 	// Check for existing network interfaces
-	vmService := conn.SystemService().VmsService().VmService(vmID)
-	nicsService := vmService.NicsService()
-	nicsResp, err := nicsService.List().Send()
+	var nicsResp *ovirtsdk4.VmNicsServiceListResponse
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		nicsResp, err = conn.SystemService().VmsService().VmService(vmID).NicsService().List().Send()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("Error getting VM network interfaces: %s", err)
 	}
@@ -670,7 +749,10 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 			return fmt.Errorf("Error creating NIC update: %s", err)
 		}
 
-		_, err = nicsService.NicService(nicID).Update().Nic(nicUpdate).Send()
+		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			_, err := conn.SystemService().VmsService().VmService(vmID).NicsService().NicService(nicID).Update().Nic(nicUpdate).Send()
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("Error updating existing NIC: %s", err)
 		}
@@ -703,7 +785,10 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 		return fmt.Errorf("Error creating NIC: %s", err)
 	}
 
-	_, err = nicsService.Add().Nic(nic).Send()
+	err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		_, err := conn.SystemService().VmsService().VmService(vmID).NicsService().Add().Nic(nic).Send()
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("Error adding NIC to VM: %s", err)
 	}
@@ -712,11 +797,11 @@ func (s *stepCreateVM) manageNetworkInterfaces(conn *ovirtsdk4.Connection, confi
 	return nil
 }
 
-func (s *stepCreateVM) waitForVMReady(conn *ovirtsdk4.Connection, vmID string, state multistep.StateBag) error {
+func (s *stepCreateVM) waitForVMReady(connWrapper *ConnectionWrapper, vmID string, state multistep.StateBag) error {
 	vmStateChange := StateChangeConf{
 		Pending:   []string{"image_locked"},
 		Target:    []string{string(ovirtsdk4.VMSTATUS_DOWN)},
-		Refresh:   VMStateRefreshFunc(conn, vmID),
+		Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID),
 		StepState: state,
 	}
 	if _, err := WaitForState(&vmStateChange); err != nil {
@@ -728,7 +813,7 @@ func (s *stepCreateVM) waitForVMReady(conn *ovirtsdk4.Connection, vmID string, s
 func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 	config := state.Get("config").(*Config)
 	ui := state.Get("ui").(packer.Ui)
-	conn := state.Get("conn").(*ovirtsdk4.Connection)
+	connWrapper := state.Get("connWrapper").(*ConnectionWrapper)
 
 	vmID, ok := state.GetOk("vm_id")
 	if !ok {
@@ -736,11 +821,16 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 	}
 
 	// Check if VM is running and stop it
-	vmResp, err := conn.SystemService().
-		VmsService().
-		VmService(vmID.(string)).
-		Get().
-		Send()
+	var vmResp *ovirtsdk4.VmServiceGetResponse
+	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+		var err error
+		vmResp, err = conn.SystemService().
+			VmsService().
+			VmService(vmID.(string)).
+			Get().
+			Send()
+		return err
+	})
 	if err != nil {
 		ui.Error(fmt.Sprintf("Error getting VM status: %s", err))
 		return
@@ -753,11 +843,14 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 		ui.Say(fmt.Sprintf("VM '%s' is already stopped", config.VMName))
 	} else {
 		ui.Say(fmt.Sprintf("Stopping VM '%s'...", config.VMName))
-		_, err = conn.SystemService().
-			VmsService().
-			VmService(vmID.(string)).
-			Stop().
-			Send()
+		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			_, err := conn.SystemService().
+				VmsService().
+				VmService(vmID.(string)).
+				Stop().
+				Send()
+			return err
+		})
 		if err != nil {
 			ui.Error(fmt.Sprintf("Error stopping VM: %s", err))
 			return
@@ -767,7 +860,7 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 		vmStateChange := StateChangeConf{
 			Pending:   []string{string(ovirtsdk4.VMSTATUS_UP)},
 			Target:    []string{string(ovirtsdk4.VMSTATUS_DOWN)},
-			Refresh:   VMStateRefreshFunc(conn, vmID.(string)),
+			Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID.(string)),
 			StepState: state,
 		}
 		if _, err := WaitForState(&vmStateChange); err != nil {
@@ -779,11 +872,14 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 	// Delete VM if cleanup is enabled
 	if config.CleanupVM != nil && *config.CleanupVM {
 		ui.Say(fmt.Sprintf("Deleting virtual machine: %s", config.VMName))
-		_, err = conn.SystemService().
-			VmsService().
-			VmService(vmID.(string)).
-			Remove().
-			Send()
+		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+			_, err := conn.SystemService().
+				VmsService().
+				VmService(vmID.(string)).
+				Remove().
+				Send()
+			return err
+		})
 		if err != nil {
 			ui.Error(fmt.Sprintf("Error deleting VM: %s", err))
 		}
