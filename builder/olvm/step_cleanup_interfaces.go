@@ -18,7 +18,7 @@ func (s *stepCleanupInterfaces) Run(ctx context.Context, state multistep.StateBa
 	vmID := state.Get("vm_id").(string)
 
 	// Skip interface cleanup if cleanup_interfaces is set to false
-	if !config.CleanupInterfaces {
+	if config.CleanupInterfaces != nil && !*config.CleanupInterfaces {
 		ui.Say("Skipping network interface cleanup due to cleanup_interfaces setting")
 		return multistep.ActionContinue
 	}

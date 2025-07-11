@@ -55,9 +55,12 @@ func (b *Builder) Prepare(raws ...interface{}) (generatedVars []string, warnings
 	}
 
 	// Set default value for cleanup_interfaces if not specified
-	if !b.config.CleanupInterfaces {
-		b.config.CleanupInterfaces = true
-		log.Printf("Using default cleanup_interfaces: %t", b.config.CleanupInterfaces)
+	if b.config.CleanupInterfaces == nil {
+		defaultCleanupInterfaces := true
+		b.config.CleanupInterfaces = &defaultCleanupInterfaces
+		log.Printf("Using default cleanup_interfaces: %t", *b.config.CleanupInterfaces)
+	} else {
+		log.Printf("Using configured cleanup_interfaces: %t", *b.config.CleanupInterfaces)
 	}
 
 	// Set default value for cleanup_vm if not specified

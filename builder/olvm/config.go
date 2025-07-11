@@ -35,7 +35,7 @@ type Config struct {
 	OSInterfaceName                string   `mapstructure:"os_interface_name"`
 	DestinationTemplateName        string   `mapstructure:"destination_template_name"`
 	DestinationTemplateDescription string   `mapstructure:"destination_template_description"`
-	CleanupInterfaces              bool     `mapstructure:"cleanup_interfaces"`
+	CleanupInterfaces              *bool    `mapstructure:"cleanup_interfaces"`
 	CleanupVM                      *bool    `mapstructure:"cleanup_vm"`
 	ExportHost                     string   `mapstructure:"export_host"`
 	ExportDirectory                string   `mapstructure:"export_directory"`
