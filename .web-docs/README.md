@@ -1,4 +1,4 @@
-# Packer Plugin for Oracle Linux Virtualization Manager (OLVM)
+# Oracle Linux Virtualization Manager (OLVM)
 
 This plugin for HashiCorp [Packer][packer-link] provides a builder for Oracle [OLVM][olvm-link] to create customized VM templates from either source templates, or source disk images. This may include, for example, [Official Oracle Enterprise Linux OVA Templates][oel-link], or compatible cloud disk images provided by many Linux distributions (Ubuntu, Debian, RockyLinux, CentOS, etc.)
 

@@ -1,5 +1,5 @@
 integration {
-  name = "Packer Plugin for Oracle Linux Virtualization Manager (OLVM)"
+  name = "Oracle Linux Virtualization Manager (OLVM)"
   description = "The OLVM builder can be used to build and export custom OLVM templates from disk image or template sources."
   identifier = "packer/hashicorp/olvm"
   component {
