@@ -114,8 +114,8 @@ The OLVM builder supports the following parameters:
 #### OLVM Configuration
 
 - `tls_insecure` - Skip TLS verification (defaults to false)
-- `max_retries` - Maximum number of reconnection attempts for communication issues (defaults to 4)
-- `retry_interval_sec` - Interval between reconnection attempts in seconds (defaults to 2)
+- `max_retries` - Maximum number of retry attempts for communication issues (defaults to 4)
+- `retry_interval_sec` - Interval between retry attempts in seconds (defaults to 2)
 
 #### Source Configuration
 
@@ -145,6 +145,7 @@ The OLVM builder supports the following parameters:
 
 - `destination_template_name` - Name for the generated template (optional)
 - `destination_template_description` - Description for the template. Defaults to "Template created by Packer from VM <vm_name>".
+- `template_seal` - Whether to seal the template during creation (defaults to true)
 
 #### Cleanup Configuration
 

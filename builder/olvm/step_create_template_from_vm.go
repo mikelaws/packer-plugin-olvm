@@ -57,6 +57,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 	}
 
 	ui.Say(fmt.Sprintf("Creating template '%s' from VM...", config.DestinationTemplateName))
+	ui.Say(fmt.Sprintf("Template seal setting: %t", *config.TemplateSeal))
 
 	// Get the Templates service
 	var templatesService *ovirtsdk4.TemplatesService
@@ -106,6 +107,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 		var err error
 		templateResp, err = templatesService.Add().
 			Template(template).
+			Seal(*config.TemplateSeal).
 			Send()
 		return err
 	})

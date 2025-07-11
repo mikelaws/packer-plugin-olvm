@@ -95,6 +95,9 @@ type FlatConfig struct {
 	ExportHost                     *string           `mapstructure:"export_host" cty:"export_host" hcl:"export_host"`
 	ExportDirectory                *string           `mapstructure:"export_directory" cty:"export_directory" hcl:"export_directory"`
 	ExportFileName                 *string           `mapstructure:"export_file_name" cty:"export_file_name" hcl:"export_file_name"`
+	MaxRetries                     *int              `mapstructure:"max_retries" cty:"max_retries" hcl:"max_retries"`
+	RetryIntervalSec               *int              `mapstructure:"retry_interval_sec" cty:"retry_interval_sec" hcl:"retry_interval_sec"`
+	TemplateSeal                   *bool             `mapstructure:"template_seal" cty:"template_seal" hcl:"template_seal"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -194,6 +197,9 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"export_host":                      &hcldec.AttrSpec{Name: "export_host", Type: cty.String, Required: false},
 		"export_directory":                 &hcldec.AttrSpec{Name: "export_directory", Type: cty.String, Required: false},
 		"export_file_name":                 &hcldec.AttrSpec{Name: "export_file_name", Type: cty.String, Required: false},
+		"max_retries":                      &hcldec.AttrSpec{Name: "max_retries", Type: cty.Number, Required: false},
+		"retry_interval_sec":               &hcldec.AttrSpec{Name: "retry_interval_sec", Type: cty.Number, Required: false},
+		"template_seal":                    &hcldec.AttrSpec{Name: "template_seal", Type: cty.Bool, Required: false},
 	}
 	return s
 }

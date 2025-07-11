@@ -42,6 +42,7 @@ type Config struct {
 	ExportFileName                 string   `mapstructure:"export_file_name"`
 	MaxRetries                     int      `mapstructure:"max_retries"`
 	RetryIntervalSec               int      `mapstructure:"retry_interval_sec"`
+	TemplateSeal                   *bool    `mapstructure:"template_seal"`
 
 	ctx interpolate.Context
 }
@@ -131,6 +132,15 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 	if c.RetryIntervalSec == 0 {
 		c.RetryIntervalSec = 2
 		log.Printf("Using default retry_interval_sec: %d", c.RetryIntervalSec)
+	}
+
+	// Set default value for template_seal if not specified
+	if c.TemplateSeal == nil {
+		defaultSeal := true
+		c.TemplateSeal = &defaultSeal
+		log.Printf("Using default template_seal: %t", *c.TemplateSeal)
+	} else {
+		log.Printf("Using configured template_seal: %t", *c.TemplateSeal)
 	}
 
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)
