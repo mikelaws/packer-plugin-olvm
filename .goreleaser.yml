@@ -24,7 +24,9 @@ builds:
       - linux
     goarch:
       - amd64
-    binary: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
+    binary: 'packer-plugin-olvm'
+    env:
+      - CGO_ENABLED=0
   -
     mod_timestamp: '{{ .CommitTimestamp }}'
     flags:
