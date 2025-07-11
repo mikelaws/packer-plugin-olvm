@@ -61,7 +61,7 @@ make build
 
 ### Configuration
 
-* [Builder](builders/builder.md) - Configuring the primary `olvm` builder used to create OLVM VM templates.
+* [Builder](/docs/builders/README.md) - Configuring the primary `olvm` builder used to create OLVM VM templates.
 
 ## License
 
