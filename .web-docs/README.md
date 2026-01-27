@@ -4,12 +4,15 @@ This plugin for HashiCorp [Packer][packer-link] provides a builder for Oracle [O
 
 ## Features
 
-- VM template creation from either source templates or source disk images
+- VM template creation from either source templates, source disk images, or remote URL disk images
+- Support for downloading and validating remote disk images (qcow2, raw) with checksum verification
+- Duplicate detection to prevent storage domain bloat by reusing existing disks with matching checksums
 - Support for Packer standard communicators and provisioners
 - Optionally export template artifacts (in OVA format) for distribution
 - Ability to troubleshoot build issues by disabling VM cleanup/deletion
 - Configurable networking and OS network interface name
 - Configurable storage interface (`virtio-scsi`, `virtio`)
+- Configurable VM firmware type (BIOS or UEFI) for compatibility with different OS images
 - Automatic session reconnection for long-running provisioners with configurable retry limits
 
 ## Installation
@@ -30,7 +33,7 @@ The `packer init` command automatically installs any required Packer plugins def
 packer {
   required_plugins {
     olvm = {
-      version = ">= 1.0.4"
+      version = ">= 1.1.0"
       source  = "github.com/mikelaws/olvm"
     }
   }

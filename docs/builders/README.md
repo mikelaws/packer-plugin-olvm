@@ -90,6 +90,84 @@ build {
 }
 ```
 
+### URL-based Disk Build
+
+```hcl
+source "olvm" "url-disk-example" {
+  # OLVM Configuration
+  olvm_url = "https://olvm.example.com/ovirt-engine/api"
+  username = "admin@internal"
+  password = "password"
+  tls_insecure = true
+
+  # Source Configuration - Remote URL disk image
+  source_disk_url = "https://cloud-images.ubuntu.com/releases/22.04/release/ubuntu-22.04-server-cloudimg-amd64.img"
+  source_disk_checksum_url = "https://cloud-images.ubuntu.com/releases/22.04/release/SHA256SUMS"
+  source_disk_url_checksum_type = "sha256"
+  source_disk_storage_domain = "example_iscsi_block"  # Optional: specify storage domain
+  source_disk_upload_name = "ubuntu-22.04-amd64.img"  # Optional: defaults to filename from URL
+  cluster = "Default"
+
+  # Network Configuration
+  network_name = "ovirtmgmt"
+  vnic_profile = "ovirtmgmt"
+  dns_servers = ["8.8.8.8", "8.8.4.4"]
+  os_interface_name = "ens3"
+
+  # VM Configuration
+  vm_name = "packer-ubuntu-url-vm"
+  vm_vcpu_count = 2
+  vm_memory_mb = 4096
+  vm_storage_driver = "virtio-scsi"
+  vm_firmware_type = "bios"  # Optional: "bios" or "uefi" (defaults to cluster default)
+
+  # SSH Configuration
+  ssh_username = "ubuntu"
+  ssh_timeout = "30m"
+
+  # Template Configuration
+  destination_template_name = "ubuntu-22.04-url-template"
+
+  # Cleanup Configuration
+  cleanup_vm = true
+  cleanup_interfaces = true
+}
+
+build {
+  sources = ["source.olvm.url-disk-example"]
+}
+```
+
+**Alternative URL example with direct checksum and RAW conversion:**
+
+```hcl
+source "olvm" "url-disk-raw-example" {
+  # OLVM Configuration
+  olvm_url = "https://olvm.example.com/ovirt-engine/api"
+  username = "admin@internal"
+  password = "password"
+  tls_insecure = true
+
+  # Source Configuration - RAW image with direct checksum
+  source_disk_url = "https://example.com/images/ubuntu-22.04-server-cloudimg-amd64.img"
+  source_disk_url_checksum = "f5d311aad28742200fabb183a8af42292ad4f22c941a4371b736c82089bf67ee"
+  source_disk_url_checksum_type = "sha256"
+  source_disk_storage_domain = "example_iscsi_block"
+  convert_raw_sparse_to_preallocated = true  # Required for RAW on block storage
+  cluster = "Default"
+
+  # VM Configuration
+  vm_name = "packer-ubuntu-raw-vm"
+  vm_firmware_type = "bios"  # Some cloud images require BIOS, not UEFI
+  # ... rest of configuration ...
+}
+```
+
+**Notes:** 
+- The plugin automatically detects the image format (qcow2 or raw) by reading file headers, regardless of file extension.
+- For RAW images on block storage (iSCSI/FCP), you may need to enable `convert_raw_sparse_to_preallocated = true` to convert sparse RAW images to preallocated format, as sparse RAW images are incompatible with block storage domains.
+- Checksums are automatically stored in the disk description using the format `[packer-checksum:algorithm:hash]` for duplicate detection.
+
 ## Configuration Options
 
 The OLVM builder supports the following parameters:
@@ -104,10 +182,27 @@ The OLVM builder supports the following parameters:
 
 #### Source Configuration (any one of the following)
 
+**Template-based sources:**
 - `source_template_name` - Name of the source template
 - `source_template_id` - ID of the source template (alternative to source_template_name)
+
+**Existing disk-based sources:**
 - `source_disk_name` - Name of the source disk image
 - `source_disk_id` - ID of the source disk image (alternative to source_disk_name)
+
+**Remote URL-based sources:**
+- `source_disk_url` - HTTP/HTTPS URL to a remote disk image (qcow2, raw, img formats supported)
+- `source_disk_checksum_url` - Optional URL to a checksum file for validation (supports standard and BSD-style checksum file formats)
+- `source_disk_url_checksum` - Optional direct checksum value for validation
+- `source_disk_url_checksum_type` - Checksum algorithm: `md5`, `sha1`, `sha256`, or `sha512` (defaults to `sha256` if checksum is provided)
+- `source_disk_upload_name` - Optional name for the uploaded disk (defaults to filename from URL)
+- `source_disk_storage_domain` - Optional storage domain name for the uploaded disk (defaults to cluster default)
+- `force_upload` - Force upload even if duplicate disk exists (defaults to false)
+- `convert_raw_sparse_to_preallocated` - Convert RAW sparse images to preallocated format for block storage compatibility (defaults to false)
+
+> **Note:** OVA template files are not supported via URL. Only disk image formats (qcow2, raw, img) can be downloaded from URLs.
+
+> **Duplicate Detection:** When using URL-based sources, the plugin automatically checks for existing disks with the same name and checksum before downloading. If a matching disk is found (by name and checksum stored in the disk description), the existing disk is reused to prevent storage domain bloat. If a disk with the same name exists but has a different checksum, the build will fail unless `force_upload = true` is set.
 
 ### Optional Configuration
 
@@ -127,7 +222,10 @@ The OLVM builder supports the following parameters:
 - `vm_name` - Name for the VM (defaults to "packer-<time-ordered-uuid>")
 - `vm_vcpu_count` - Number of virtual CPUs (defaults to 1)
 - `vm_memory_mb` - Memory in MB (defaults to 1024)
-- `vm_storage_driver` - Storage interface type (defaults to "virtio-scsi")
+- `vm_storage_driver` - Storage interface type: `virtio-scsi` or `virtio` (defaults to "virtio-scsi")
+- `vm_firmware_type` - VM firmware type: `bios` or `uefi` (defaults to cluster default if unset)
+  - `bios` - Sets "Q35 Chipset with BIOS" (compatible with most traditional OS images)
+  - `uefi` - Sets "Q35 Chipset with UEFI" (required for modern UEFI-based OS images)
 
 #### Network Configuration
 
