@@ -110,6 +110,12 @@ func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (pack
 		Comm:         &b.config.Comm,
 		DebugKeyPath: fmt.Sprintf("olvm_%s.pem", b.config.PackerBuildName),
 	})
+	// Add image upload step if source is URL
+	if b.config.SourceConfig.GetSourceType() == "url" {
+		steps = append(steps, &stepUploadImageFromURL{
+			Debug: b.config.PackerDebug,
+		})
+	}
 	steps = append(steps, &stepCreateVM{
 		Ctx:   b.config.ctx,
 		Debug: b.config.PackerDebug,

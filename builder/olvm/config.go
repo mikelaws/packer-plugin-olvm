@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/packer-plugin-sdk/common"
@@ -26,6 +27,7 @@ type Config struct {
 	VmVcpuCount                    int      `mapstructure:"vm_vcpu_count"`
 	VmMemoryMB                     int      `mapstructure:"vm_memory_mb"`
 	VMStorageDriver                string   `mapstructure:"vm_storage_driver"`
+	VMFirmwareType                 string   `mapstructure:"vm_firmware_type"`
 	IPAddress                      string   `mapstructure:"address"`
 	Netmask                        string   `mapstructure:"netmask"`
 	Gateway                        string   `mapstructure:"gateway"`
@@ -89,6 +91,22 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 	}
 	if !validDriver {
 		errs = packer.MultiErrorAppend(errs, fmt.Errorf("Invalid vm_storage_driver: %s. Must be one of: %v", c.VMStorageDriver, validStorageDrivers))
+	}
+
+	// Validate vm_firmware_type if provided
+	if c.VMFirmwareType != "" {
+		validFirmwareTypes := []string{"bios", "uefi"}
+		validFirmware := false
+		for _, fwType := range validFirmwareTypes {
+			if strings.ToLower(c.VMFirmwareType) == fwType {
+				validFirmware = true
+				c.VMFirmwareType = strings.ToLower(c.VMFirmwareType)
+				break
+			}
+		}
+		if !validFirmware {
+			errs = packer.MultiErrorAppend(errs, fmt.Errorf("Invalid vm_firmware_type: %s. Must be one of: %v (or leave unset to use cluster default)", c.VMFirmwareType, validFirmwareTypes))
+		}
 	}
 
 	// Validate export configuration

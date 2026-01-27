@@ -43,11 +43,102 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	// Get source resource info (template or disk)
-	resourceInfo, err := s.getSourceResourceInfo(connWrapper, config)
-	if err != nil {
-		state.Put("error", err)
-		ui.Error(err.Error())
-		return multistep.ActionHalt
+	var resourceInfo *VMResourceInfo
+	if sourceType == "url" {
+		// For URL sources, retrieve from state (set by upload step)
+		uploadedResourceID, ok := state.GetOk("uploaded_resource_id")
+		if !ok {
+			err := fmt.Errorf("uploaded_resource_id not found in state. URL source upload step may have failed")
+			state.Put("error", err)
+			ui.Error(err.Error())
+			return multistep.ActionHalt
+		}
+
+		uploadedResourceType, ok := state.GetOk("uploaded_resource_type")
+		if !ok {
+			err := fmt.Errorf("uploaded_resource_type not found in state")
+			state.Put("error", err)
+			ui.Error(err.Error())
+			return multistep.ActionHalt
+		}
+
+		resourceType := uploadedResourceType.(string)
+		resourceID := uploadedResourceID.(string)
+
+		// Get resource details based on type
+		if resourceType == "ova" {
+			// It's a template
+			var templateResp *ovirtsdk4.TemplateServiceGetResponse
+			err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+				var err error
+				templateResp, err = conn.SystemService().
+					TemplatesService().
+					TemplateService(resourceID).
+					Get().
+					Send()
+				return err
+			})
+			if err != nil {
+				err = fmt.Errorf("Error getting template details: %s", err)
+				state.Put("error", err)
+				ui.Error(err.Error())
+				return multistep.ActionHalt
+			}
+
+			template := templateResp.MustTemplate()
+			templateCpu := template.MustCpu()
+			templateMemory := template.MustMemory()
+
+			cpuCount := 1
+			if templateCpuTopology, ok := templateCpu.Topology(); ok {
+				if templateCores, ok := templateCpuTopology.Cores(); ok {
+					cpuCount = int(templateCores)
+				}
+			}
+
+			memoryMB := int(templateMemory / (1024 * 1024))
+			if memoryMB == 0 {
+				memoryMB = 1024
+			}
+
+			resourceInfo = &VMResourceInfo{
+				ID:       resourceID,
+				Name:     config.SourceConfig.SourceDiskUploadName,
+				CPUCount: cpuCount,
+				MemoryMB: memoryMB,
+			}
+		} else {
+			// It's a disk - verify it exists
+			err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+				_, err := conn.SystemService().
+					DisksService().
+					DiskService(resourceID).
+					Get().
+					Send()
+				return err
+			})
+			if err != nil {
+				err = fmt.Errorf("Error getting disk details: %s", err)
+				state.Put("error", err)
+				ui.Error(err.Error())
+				return multistep.ActionHalt
+			}
+
+			resourceInfo = &VMResourceInfo{
+				ID:       resourceID,
+				Name:     config.SourceConfig.SourceDiskUploadName,
+				CPUCount: 1,
+				MemoryMB: 1024,
+			}
+		}
+	} else {
+		var err error
+		resourceInfo, err = s.getSourceResourceInfo(connWrapper, config)
+		if err != nil {
+			state.Put("error", err)
+			ui.Error(err.Error())
+			return multistep.ActionHalt
+		}
 	}
 
 	// Determine CPU and memory values
@@ -57,18 +148,22 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	log.Printf("VM memory: %d MB", memoryMB)
 
 	// Create VM
-	vmID, err := s.createVM(connWrapper, config, clusterID, cpuCount, memoryMB, resourceInfo)
+	vmID, err := s.createVM(connWrapper, config, clusterID, cpuCount, memoryMB, resourceInfo, state)
 	if err != nil {
 		state.Put("error", err)
 		ui.Error(err.Error())
 		return multistep.ActionHalt
 	}
 
+	// Store VM ID in state early so cleanup can find it even if later steps fail
+	state.Put("vm_id", vmID)
+
 	// Attach network if specified
 	if config.NetworkName != "" {
 		if err := s.manageNetworkInterfaces(connWrapper, config, vmID, clusterID); err != nil {
 			state.Put("error", err)
 			ui.Error(err.Error())
+			// VM ID is already in state, cleanup will handle it
 			return multistep.ActionHalt
 		}
 	}
@@ -100,6 +195,7 @@ func (s *stepCreateVM) Run(ctx context.Context, state multistep.StateBag) multis
 	}
 
 	latestVM := vmResp.MustVm()
+	// VM ID was already stored above, but update it with latest info
 	state.Put("vm_id", latestVM.MustId())
 
 	return multistep.ActionContinue
@@ -140,6 +236,10 @@ func (s *stepCreateVM) getSourceResourceInfo(connWrapper *ConnectionWrapper, con
 		return s.getTemplateInfo(connWrapper, config)
 	case "disk":
 		return s.getDiskInfo(connWrapper, config)
+	case "url":
+		// URL sources are handled in Run() method with state access
+		// This should never be reached
+		return nil, fmt.Errorf("URL source type should be handled in Run() method, not getSourceResourceInfo()")
 	default:
 		return nil, fmt.Errorf("Unsupported source type: %s", config.SourceConfig.GetSourceType())
 	}
@@ -303,6 +403,14 @@ func (s *stepCreateVM) getDiskInfo(connWrapper *ConnectionWrapper, config *Confi
 	}, nil
 }
 
+func (s *stepCreateVM) getURLSourceInfo(connWrapper *ConnectionWrapper, config *Config) (*VMResourceInfo, error) {
+	// For URL sources, the resource should have been uploaded by stepUploadImageFromURL
+	// and stored in state. However, since we don't have access to state here,
+	// we need to modify the Run method to handle URL sources differently.
+	// This is a placeholder - the actual implementation will be in Run()
+	return nil, fmt.Errorf("URL source handling should be done in Run() method with state access")
+}
+
 func (s *stepCreateVM) getVMResources(config *Config, resourceInfo *VMResourceInfo) (int, int) {
 	// Use config values if specified, otherwise use resource defaults
 	cpuCount := config.VmVcpuCount
@@ -318,7 +426,7 @@ func (s *stepCreateVM) getVMResources(config *Config, resourceInfo *VMResourceIn
 	return cpuCount, memoryMB
 }
 
-func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, clusterID string, cpuCount, memoryMB int, resourceInfo *VMResourceInfo) (string, error) {
+func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, clusterID string, cpuCount, memoryMB int, resourceInfo *VMResourceInfo, state multistep.StateBag) (string, error) {
 	vmBuilder := ovirtsdk4.NewVmBuilder().
 		Name(config.VMName).
 		Cpu(
@@ -341,8 +449,33 @@ func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, 
 	}
 	vmBuilder.Cluster(cluster)
 
+	// Set chipset and firmware type if specified
+	if config.VMFirmwareType != "" {
+		// Build Bios configuration
+		// oVirt uses: "q35_sea_bios" for Q35 Chipset with BIOS, "q35_ovmf" for Q35 Chipset with UEFI
+		var biosType ovirtsdk4.BiosType
+		if config.VMFirmwareType == "bios" {
+			biosType = ovirtsdk4.BiosType("q35_sea_bios")
+			log.Printf("Setting VM firmware to: Q35 Chipset with BIOS")
+		} else if config.VMFirmwareType == "uefi" {
+			biosType = ovirtsdk4.BiosType("q35_ovmf")
+			log.Printf("Setting VM firmware to: Q35 Chipset with UEFI")
+		}
+		
+		bios, err := ovirtsdk4.NewBiosBuilder().
+			Type(biosType).
+			Build()
+		if err != nil {
+			return "", fmt.Errorf("Error creating BIOS object: %s", err)
+		}
+		vmBuilder.Bios(bios)
+	} else {
+		log.Printf("Using cluster default firmware type (vm_firmware_type not specified)")
+	}
+
 	// Add template or disk based on source type
-	if config.SourceConfig.GetSourceType() == "template" {
+	sourceType := config.SourceConfig.GetSourceType()
+	if sourceType == "template" {
 		t, err := ovirtsdk4.NewTemplateBuilder().
 			Id(resourceInfo.ID).
 			Build()
@@ -361,7 +494,7 @@ func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, 
 		vmBuilder.VirtioScsi(virtioScsi)
 	}
 
-	if config.SourceConfig.GetSourceType() == "disk" {
+	if sourceType == "disk" || sourceType == "url" {
 		// For disk-based VMs, we need to use the blank template
 		blankTemplate, err := ovirtsdk4.NewTemplateBuilder().
 			Name("Blank").
@@ -408,21 +541,41 @@ func (s *stepCreateVM) createVM(connWrapper *ConnectionWrapper, config *Config, 
 	log.Printf("Virtual machine id: %s", vmID)
 
 	// Attach disk for disk-based VMs after VM creation
-	if config.SourceConfig.GetSourceType() == "disk" {
+	if sourceType == "disk" || sourceType == "url" {
 		log.Printf("Cloning disk %s before attaching to VM %s", resourceInfo.ID, vmID)
 		clonedDiskID, err := s.cloneDisk(connWrapper, resourceInfo.ID, resourceInfo.Name)
 		if err != nil {
 			return "", fmt.Errorf("Error cloning disk: %s", err)
 		}
 
+		// Store cloned disk ID in state for cleanup if needed
+		state.Put("cloned_disk_id", clonedDiskID)
+
 		log.Printf("Attaching cloned disk %s to VM %s", clonedDiskID, vmID)
 		if err := s.attachDiskToVM(connWrapper, vmID, clonedDiskID, config.VMStorageDriver); err != nil {
+			// If attachment fails, try to clean up the cloned disk
+			if ui, ok := state.GetOk("ui"); ok {
+				ui.(packer.Ui).Message(fmt.Sprintf("Disk attachment failed, cleaning up cloned disk: %s", clonedDiskID))
+			}
+			cleanupErr := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+				_, err := conn.SystemService().
+					DisksService().
+					DiskService(clonedDiskID).
+					Remove().
+					Send()
+				return err
+			})
+			if cleanupErr != nil {
+				if ui, ok := state.GetOk("ui"); ok {
+					ui.(packer.Ui).Error(fmt.Sprintf("Warning: Could not clean up cloned disk: %s", cleanupErr))
+				}
+			}
 			return "", fmt.Errorf("Error attaching cloned disk to VM: %s", err)
 		}
 	}
 
 	// Verify disk attachment for disk-based VMs
-	if config.SourceConfig.GetSourceType() == "disk" {
+	if sourceType == "disk" || sourceType == "url" {
 		log.Printf("Verifying disk attachment for VM %s", vmID)
 		var vmResp *ovirtsdk4.VmServiceGetResponse
 		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
@@ -872,6 +1025,8 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 	// Delete VM if cleanup is enabled
 	if config.CleanupVM != nil && *config.CleanupVM {
 		ui.Say(fmt.Sprintf("Deleting virtual machine: %s", config.VMName))
+		
+		// Delete VM (this should also clean up attached disks)
 		err = connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
 			_, err := conn.SystemService().
 				VmsService().
@@ -882,6 +1037,23 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 		})
 		if err != nil {
 			ui.Error(fmt.Sprintf("Error deleting VM: %s", err))
+			// Try to clean up cloned disk separately if VM deletion failed
+			if clonedDiskID, ok := state.GetOk("cloned_disk_id"); ok {
+				ui.Message(fmt.Sprintf("Attempting to clean up cloned disk: %s", clonedDiskID))
+				cleanupErr := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
+					_, err := conn.SystemService().
+						DisksService().
+						DiskService(clonedDiskID.(string)).
+						Remove().
+						Send()
+					return err
+				})
+				if cleanupErr != nil {
+					ui.Error(fmt.Sprintf("Error cleaning up cloned disk: %s", cleanupErr))
+				}
+			}
+		} else {
+			ui.Say(fmt.Sprintf("Successfully deleted VM: %s", config.VMName))
 		}
 	} else {
 		ui.Say(fmt.Sprintf("Skipping VM cleanup due to cleanup_vm setting. VM '%s' will remain in the system.", config.VMName))
