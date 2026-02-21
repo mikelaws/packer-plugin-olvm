@@ -67,7 +67,8 @@ func (s *stepStopVM) Run(ctx context.Context, state multistep.StateBag) multiste
 
 	ui.Message(fmt.Sprintf("Waiting for VM to stop: %s...", vmID))
 	stateChange := StateChangeConf{
-		Pending:   []string{string(ovirtsdk4.VMSTATUS_UP)},
+		// up -> powering_down -> down; allow transitional states while stopping
+		Pending:   []string{string(ovirtsdk4.VMSTATUS_UP), "powering_down", "saving_state"},
 		Target:    []string{string(ovirtsdk4.VMSTATUS_DOWN)},
 		Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID),
 		StepState: state,

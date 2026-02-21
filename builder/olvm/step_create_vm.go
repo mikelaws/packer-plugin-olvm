@@ -1011,7 +1011,8 @@ func (s *stepCreateVM) Cleanup(state multistep.StateBag) {
 
 		// Wait for VM to stop
 		vmStateChange := StateChangeConf{
-			Pending:   []string{string(ovirtsdk4.VMSTATUS_UP)},
+			// up -> powering_down -> down; allow transitional states while stopping
+			Pending:   []string{string(ovirtsdk4.VMSTATUS_UP), "powering_down", "saving_state"},
 			Target:    []string{string(ovirtsdk4.VMSTATUS_DOWN)},
 			Refresh:   VMStateRefreshFuncWithWrapper(connWrapper, vmID.(string)),
 			StepState: state,
