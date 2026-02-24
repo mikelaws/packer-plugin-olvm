@@ -135,6 +135,7 @@ func (b *Builder) Run(ctx context.Context, ui packer.Ui, hook packer.Hook) (pack
 	})
 	steps = append(steps, &stepStopVM{})
 	steps = append(steps, &stepCleanupInterfaces{})
+	steps = append(steps, &stepPrepareVMForTemplate{})
 	steps = append(steps, &stepCreateTemplateFromVM{
 		Debug: b.config.PackerDebug,
 	})

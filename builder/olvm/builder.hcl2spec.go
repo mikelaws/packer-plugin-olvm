@@ -107,6 +107,10 @@ type FlatConfig struct {
 	MaxRetries                     *int              `mapstructure:"max_retries" cty:"max_retries" hcl:"max_retries"`
 	RetryIntervalSec               *int              `mapstructure:"retry_interval_sec" cty:"retry_interval_sec" hcl:"retry_interval_sec"`
 	TemplateSeal                   *bool             `mapstructure:"template_seal" cty:"template_seal" hcl:"template_seal"`
+	TemplateResetCloudInit         *bool             `mapstructure:"template_reset_cloud_init" cty:"template_reset_cloud_init" hcl:"template_reset_cloud_init"`
+	TemplateHighAvailability       *bool             `mapstructure:"template_high_availability" cty:"template_high_availability" hcl:"template_high_availability"`
+	TemplateHALeaseStorageDomain   *string           `mapstructure:"template_ha_lease_storage_domain" cty:"template_ha_lease_storage_domain" hcl:"template_ha_lease_storage_domain"`
+	TemplateHAResumeBehavior       *string           `mapstructure:"template_ha_resume_behavior" cty:"template_ha_resume_behavior" hcl:"template_ha_resume_behavior"`
 }
 
 // FlatMapstructure returns a new FlatConfig.
@@ -218,6 +222,10 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"max_retries":                        &hcldec.AttrSpec{Name: "max_retries", Type: cty.Number, Required: false},
 		"retry_interval_sec":                 &hcldec.AttrSpec{Name: "retry_interval_sec", Type: cty.Number, Required: false},
 		"template_seal":                      &hcldec.AttrSpec{Name: "template_seal", Type: cty.Bool, Required: false},
+		"template_reset_cloud_init":          &hcldec.AttrSpec{Name: "template_reset_cloud_init", Type: cty.Bool, Required: false},
+		"template_high_availability":         &hcldec.AttrSpec{Name: "template_high_availability", Type: cty.Bool, Required: false},
+		"template_ha_lease_storage_domain":    &hcldec.AttrSpec{Name: "template_ha_lease_storage_domain", Type: cty.String, Required: false},
+		"template_ha_resume_behavior":        &hcldec.AttrSpec{Name: "template_ha_resume_behavior", Type: cty.String, Required: false},
 	}
 	return s
 }

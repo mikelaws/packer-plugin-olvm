@@ -45,6 +45,10 @@ type Config struct {
 	MaxRetries                     int      `mapstructure:"max_retries"`
 	RetryIntervalSec               int      `mapstructure:"retry_interval_sec"`
 	TemplateSeal                   *bool    `mapstructure:"template_seal"`
+	TemplateResetCloudInit         *bool    `mapstructure:"template_reset_cloud_init"`
+	TemplateHighAvailability       bool     `mapstructure:"template_high_availability"`
+	TemplateHALeaseStorageDomain   string   `mapstructure:"template_ha_lease_storage_domain"`
+	TemplateHAResumeBehavior       string   `mapstructure:"template_ha_resume_behavior"`
 
 	ctx interpolate.Context
 }
@@ -159,6 +163,35 @@ func NewConfig(raws ...interface{}) (*Config, []string, error) {
 		log.Printf("Using default template_seal: %t", *c.TemplateSeal)
 	} else {
 		log.Printf("Using configured template_seal: %t", *c.TemplateSeal)
+	}
+
+	// Set default for template_reset_cloud_init (default true = reset so not inherited)
+	if c.TemplateResetCloudInit == nil {
+		defaultReset := true
+		c.TemplateResetCloudInit = &defaultReset
+		log.Printf("Using default template_reset_cloud_init: %t", *c.TemplateResetCloudInit)
+	} else {
+		log.Printf("Using configured template_reset_cloud_init: %t", *c.TemplateResetCloudInit)
+	}
+
+	// Set default for template_ha_resume_behavior when HA is enabled
+	if c.TemplateHighAvailability && c.TemplateHAResumeBehavior == "" {
+		c.TemplateHAResumeBehavior = "auto_resume"
+		log.Printf("Using default template_ha_resume_behavior: %s", c.TemplateHAResumeBehavior)
+	}
+	if c.TemplateHAResumeBehavior != "" {
+		validResume := []string{"auto_resume", "kill", "leave_paused"}
+		valid := false
+		for _, r := range validResume {
+			if strings.ToLower(c.TemplateHAResumeBehavior) == r {
+				valid = true
+				c.TemplateHAResumeBehavior = strings.ToLower(c.TemplateHAResumeBehavior)
+				break
+			}
+		}
+		if !valid {
+			errs = packer.MultiErrorAppend(errs, fmt.Errorf("Invalid template_ha_resume_behavior: %s. Must be one of: %v", c.TemplateHAResumeBehavior, validResume))
+		}
 	}
 
 	errs = packer.MultiErrorAppend(errs, c.Comm.Prepare(&c.ctx)...)

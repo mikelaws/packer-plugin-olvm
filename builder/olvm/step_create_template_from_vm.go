@@ -25,7 +25,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 	}
 
 	// Check if the VM is stopped before creating template
-	ui.Say(fmt.Sprintf("Checking VM status before creating template..."))
+	ui.Say("Checking VM status before creating template...")
 
 	var vmResp *ovirtsdk4.VmServiceGetResponse
 	err := connWrapper.ExecuteWithReconnect(func(conn *ovirtsdk4.Connection) error {
@@ -56,6 +56,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 		return multistep.ActionHalt
 	}
 
+	// VM preparation (Cloud-Init reset, HA) is done in stepPrepareVMForTemplate, which runs after cleanup_interfaces
 	ui.Say(fmt.Sprintf("Creating template '%s' from VM...", config.DestinationTemplateName))
 	ui.Say(fmt.Sprintf("Template seal setting: %t", *config.TemplateSeal))
 
@@ -146,6 +147,7 @@ func (s *stepCreateTemplateFromVM) Run(ctx context.Context, state multistep.Stat
 		return multistep.ActionHalt
 	}
 
+	// High Availability and Cloud-Init reset were applied to the VM in stepPrepareVMForTemplate; template inherits them
 	ui.Say(fmt.Sprintf("Successfully created template '%s' (ID: %s)", config.DestinationTemplateName, templateID))
 
 	// Store the template name and ID in state for potential use by other steps

@@ -244,6 +244,10 @@ The OLVM builder supports the following parameters:
 - `destination_template_name` - Name for the generated template (optional)
 - `destination_template_description` - Description for the template. Defaults to "Template created by Packer from VM <vm_name>".
 - `template_seal` - Whether to seal the template during creation (defaults to true)
+- `template_reset_cloud_init` - Whether to reset Cloud-Init / Initial Run settings on the VM before creating the template so they are not inherited (defaults to true). Set to `false` to preserve Cloud-Init settings on the template (e.g. for troubleshooting failed image builds). Applied to the VM after shutdown and after network interface cleanup.
+- `template_high_availability` - Enable High Availability on the VM before creating the template so the template inherits it (defaults to false). Applied to the VM after shutdown and after interface cleanup.
+- `template_ha_lease_storage_domain` - When `template_high_availability` is true, optionally specify the VM lease storage domain by name for reference. The plugin enables HA on the VM only; lease and resume behavior are not set by the SDK. Configure "VM Lease" in the OLVM UI after creation if needed.
+- `template_ha_resume_behavior` - When `template_high_availability` is true, optionally specify resume behavior for reference: `auto_resume` (default), `kill`, or `leave_paused`. The plugin enables HA on the VM only; configure "Resume behavior" in the OLVM UI after creation if needed.
 
 #### Cleanup Configuration
 
