@@ -224,7 +224,7 @@ func (*FlatConfig) HCL2Spec() map[string]hcldec.Spec {
 		"template_seal":                      &hcldec.AttrSpec{Name: "template_seal", Type: cty.Bool, Required: false},
 		"template_reset_cloud_init":          &hcldec.AttrSpec{Name: "template_reset_cloud_init", Type: cty.Bool, Required: false},
 		"template_high_availability":         &hcldec.AttrSpec{Name: "template_high_availability", Type: cty.Bool, Required: false},
-		"template_ha_lease_storage_domain":    &hcldec.AttrSpec{Name: "template_ha_lease_storage_domain", Type: cty.String, Required: false},
+		"template_ha_lease_storage_domain":   &hcldec.AttrSpec{Name: "template_ha_lease_storage_domain", Type: cty.String, Required: false},
 		"template_ha_resume_behavior":        &hcldec.AttrSpec{Name: "template_ha_resume_behavior", Type: cty.String, Required: false},
 	}
 	return s
